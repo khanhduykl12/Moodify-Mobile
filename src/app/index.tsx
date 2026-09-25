@@ -19,13 +19,22 @@ import { usePlayer } from '@/context/PlayerContext';
 
 const { width } = Dimensions.get('window');
 
-// Danh mục Vibe / Thể loại lấy cảm hứng từ Moodify Web
+// Danh mục Vibe / Thể loại
 const FILTER_CHIPS = [
   { id: 'all', label: 'Tất cả' },
   { id: 'vpop', label: 'V-Pop' },
   { id: 'hiphop', label: 'Hip-Hop' },
   { id: 'indie', label: 'Indie' },
   { id: 'remix', label: 'Remix/EDM' },
+];
+
+// Danh mục Tâm trạng (Moodify Signature)
+const MOOD_CARDS = [
+  { id: 'vpop', name: 'V-Pop Thịnh Hành', icon: '🔥', color: '#881337', gradient: '#fb7185' },
+  { id: 'hiphop', name: 'Năng Lượng & Flow', icon: '⚡', color: '#78350f', gradient: '#fbbf24' },
+  { id: 'indie', name: 'Acoustic & Chill', icon: '🌙', color: '#581c87', gradient: '#c084fc' },
+  { id: 'remix', name: 'Sôi Động / Remix', icon: '🎉', color: '#0369a1', gradient: '#38bdf8' },
+  { id: 'all', name: 'Tập Trung / Deep', icon: '🎧', color: '#134e4a', gradient: '#2dd4bf' },
 ];
 
 export default function HomeScreen() {
@@ -35,7 +44,7 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [allTracks, setAllTracks] = useState<Track[]>([]);
 
-  // Tải danh sách bài hát từ Backend Spring Boot
+  // Tải danh sách bài hát từ Backend
   const loadData = async () => {
     try {
       const data = await TrackApi.getTracks(0, 50);
@@ -57,7 +66,7 @@ export default function HomeScreen() {
     loadData();
   };
 
-  // Lọc bài hát theo thể loại đã chọn
+  // Lọc bài hát theo thể loại
   const filteredTracks = useMemo(() => {
     if (selectedFilter === 'all') return allTracks;
     return allTracks.filter((t) => {
@@ -70,41 +79,57 @@ export default function HomeScreen() {
     });
   }, [allTracks, selectedFilter]);
 
-  // 6 bài hát cho ô lưới Gần đây (Quick Access 2 cột x 3 hàng)
+  // 6 bài hát gần đây cho ô lưới Quick Access (2 cột x 3 hàng)
   const quickAccessTracks = useMemo(() => allTracks.slice(0, 6), [allTracks]);
 
-  // Bài hát nổi bật cho Hero Banner
-  const featuredTrack = useMemo(() => allTracks[0] || null, [allTracks]);
+  // Bài hát tiêu điểm Spotlight
+  const spotlightTrack = useMemo(() => allTracks[1] || allTracks[0] || null, [allTracks]);
 
-  // Danh sách nghệ sĩ duy nhất rút từ dữ liệu bài hát
+  // Danh sách nghệ sĩ
   const featuredArtists = useMemo(() => {
     const map = new Map<string, { name: string; image?: string | null }>();
     allTracks.forEach((t) => {
-      if (t.artistName && !map.has(t.artistName)) {
+      if (t.artistName && !map.has(t.artistName) && t.imageUrl) {
         map.set(t.artistName, { name: t.artistName, image: t.imageUrl });
       }
     });
-    return Array.from(map.values()).slice(0, 10);
+    return Array.from(map.values()).slice(0, 8);
   }, [allTracks]);
 
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         {/* ========================================================================= */}
-        {/* 1. TOP HEADER (Avatar + Filter Chips)                                      */}
+        {/* 1. TOP HEADER (Avatar + Logo + Action Icons)                              */}
         {/* ========================================================================= */}
-        <View style={styles.header}>
-          {/* Avatar User */}
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>K</Text>
+        <View style={styles.topBar}>
+          <View style={styles.topBarLeft}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>K</Text>
+            </View>
+            <View style={styles.brandRow}>
+              <Image
+                source={require('@/assets/images/moodify-logo.png')}
+                style={styles.brandLogo}
+                resizeMode="contain"
+              />
+              <Text style={styles.brandTitle}>Moodify</Text>
+            </View>
           </View>
 
-          {/* Filter Chips Scroll */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterScroll}
-          >
+          <View style={styles.topBarRight}>
+            <TouchableOpacity style={styles.iconBtn}>
+              <Ionicons name="notifications-outline" size={21} color="#ffffff" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconBtn}>
+              <Ionicons name="settings-outline" size={21} color="#ffffff" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* 2. FILTER PILLS ROW */}
+        <View style={styles.filterRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
             {FILTER_CHIPS.map((chip) => {
               const active = selectedFilter === chip.id;
               return (
@@ -121,28 +146,21 @@ export default function HomeScreen() {
               );
             })}
           </ScrollView>
-
-          {/* Bell / Search Icon */}
-          <TouchableOpacity style={styles.headerIconBtn}>
-            <Ionicons name="notifications-outline" size={22} color="#ffffff" />
-          </TouchableOpacity>
         </View>
 
         {loading ? (
           <View style={styles.centerLoading}>
-            <ActivityIndicator size="large" color="#6366f1" />
-            <Text style={styles.loadingText}>Đang tải giai điệu từ Moodify...</Text>
+            <ActivityIndicator size="large" color="#8b5cf6" />
+            <Text style={styles.loadingText}>Đang nạp giai điệu Moodify...</Text>
           </View>
         ) : (
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />
-            }
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#8b5cf6" />}
           >
             {/* ===================================================================== */}
-            {/* 2. QUICK ACCESS GRID (2 Cột x 3 Hàng kiểu Spotify)                   */}
+            {/* 3. QUICK ACCESS GRID (2 Cột x 3 Hàng Spotify style)                  */}
             {/* ===================================================================== */}
             {quickAccessTracks.length > 0 && (
               <View style={styles.quickGrid}>
@@ -158,15 +176,19 @@ export default function HomeScreen() {
                       {item.imageUrl ? (
                         <Image source={{ uri: item.imageUrl }} style={styles.quickImage} />
                       ) : (
-                        <View style={styles.quickImagePlaceholder}>
+                        <View style={styles.quickPlaceholder}>
                           <Text style={{ fontSize: 16 }}>🎵</Text>
                         </View>
                       )}
                       <Text style={styles.quickTitle} numberOfLines={2}>
                         {item.name}
                       </Text>
-                      {isCurrent && isPlaying && (
-                        <Ionicons name="volume-high" size={16} color="#818cf8" style={{ marginRight: 8 }} />
+                      {isCurrent && isPlaying ? (
+                        <Ionicons name="volume-high" size={16} color="#a78bfa" style={{ marginRight: 8 }} />
+                      ) : (
+                        <View style={styles.quickPlayGhost}>
+                          <Ionicons name="play" size={14} color="#ffffff" />
+                        </View>
                       )}
                     </TouchableOpacity>
                   );
@@ -175,39 +197,81 @@ export default function HomeScreen() {
             )}
 
             {/* ===================================================================== */}
-            {/* 3. HERO / FEATURED BANNER CARD                                       */}
+            {/* 4. SPOTLIGHT HERO BANNER (Spotify Featured Card)                     */}
             {/* ===================================================================== */}
-            {featuredTrack && (
-              <View style={styles.bannerCard}>
-                {featuredTrack.imageUrl && (
-                  <Image source={{ uri: featuredTrack.imageUrl }} style={styles.bannerImage} />
-                )}
-                <View style={styles.bannerOverlay}>
-                  <View style={styles.bannerBadge}>
-                    <Text style={styles.bannerBadgeText}>GIAI ĐIỆU MỚI THỨ SÁU</Text>
-                  </View>
-                  <Text style={styles.bannerTitle} numberOfLines={2}>
-                    {featuredTrack.name}
-                  </Text>
-                  <Text style={styles.bannerArtist} numberOfLines={1}>
-                    {featuredTrack.artistName}
-                  </Text>
-                  <View style={styles.bannerActionRow}>
-                    <TouchableOpacity
-                      style={styles.bannerPlayBtn}
-                      onPress={() => playTrack(featuredTrack)}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons name="play" size={18} color="#000000" />
-                      <Text style={styles.bannerPlayBtnText}>Nghe ngay</Text>
-                    </TouchableOpacity>
+            {spotlightTrack && (
+              <View style={styles.spotlightContainer}>
+                <View style={styles.spotlightCard}>
+                  {/* Background Artwork */}
+                  {spotlightTrack.imageUrl && (
+                    <Image
+                      source={{ uri: spotlightTrack.imageUrl }}
+                      style={styles.spotlightBgImage}
+                      blurRadius={20}
+                    />
+                  )}
+                  {/* Dark Vignette Overlay */}
+                  <View style={styles.spotlightOverlay} />
+
+                  <View style={styles.spotlightContent}>
+                    {/* Cover Thumbnail */}
+                    {spotlightTrack.imageUrl ? (
+                      <Image source={{ uri: spotlightTrack.imageUrl }} style={styles.spotlightCover} />
+                    ) : (
+                      <View style={styles.spotlightCoverPlaceholder}>
+                        <Text style={{ fontSize: 32 }}>🎵</Text>
+                      </View>
+                    )}
+
+                    {/* Meta info */}
+                    <View style={styles.spotlightMeta}>
+                      <View style={styles.spotlightBadge}>
+                        <Text style={styles.spotlightBadgeText}>🔥 TIÊU ĐIỂM MOODIFY</Text>
+                      </View>
+                      <Text style={styles.spotlightTitle} numberOfLines={1}>
+                        {spotlightTrack.name}
+                      </Text>
+                      <Text style={styles.spotlightArtist} numberOfLines={1}>
+                        {spotlightTrack.artistName}
+                      </Text>
+
+                      <TouchableOpacity
+                        style={styles.spotlightPlayBtn}
+                        onPress={() => playTrack(spotlightTrack)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="play" size={16} color="#000000" />
+                        <Text style={styles.spotlightPlayBtnText}>Nghe ngay</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
               </View>
             )}
 
             {/* ===================================================================== */}
-            {/* 4. CAROUSEL 1: Giai điệu thịnh hành                                 */}
+            {/* 5. MOOD / VIBE CARDS (Khám phá theo cảm xúc)                         */}
+            {/* ===================================================================== */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Cảm xúc âm nhạc</Text>
+            </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.moodScroll}>
+              {MOOD_CARDS.map((mood) => (
+                <TouchableOpacity
+                  key={mood.id}
+                  style={[styles.moodCard, { backgroundColor: mood.color }]}
+                  onPress={() => setSelectedFilter(mood.id)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.moodIcon}>{mood.icon}</Text>
+                  <Text style={styles.moodName}>{mood.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* ===================================================================== */}
+            {/* 6. CAROUSEL: Giai điệu thịnh hành                                    */}
             {/* ===================================================================== */}
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Giai điệu thịnh hành</Text>
@@ -232,12 +296,12 @@ export default function HomeScreen() {
                     {item.imageUrl ? (
                       <Image source={{ uri: item.imageUrl }} style={styles.cardImage} />
                     ) : (
-                      <View style={styles.cardImagePlaceholder}>
+                      <View style={styles.cardPlaceholder}>
                         <Text style={{ fontSize: 24 }}>🎵</Text>
                       </View>
                     )}
                     {currentTrack?.id === item.id && isPlaying && (
-                      <View style={styles.playingBadge}>
+                      <View style={styles.cardPlayingBadge}>
                         <Ionicons name="musical-notes" size={14} color="#ffffff" />
                       </View>
                     )}
@@ -253,7 +317,7 @@ export default function HomeScreen() {
             />
 
             {/* ===================================================================== */}
-            {/* 5. CAROUSEL 2: Nghệ sĩ nổi bật (Ảnh tròn)                           */}
+            {/* 7. CAROUSEL: Nghệ sĩ Việt Nam nổi bật (Ảnh tròn chuẩn)               */}
             {/* ===================================================================== */}
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Nghệ sĩ Việt Nam nổi bật</Text>
@@ -270,13 +334,15 @@ export default function HomeScreen() {
               contentContainerStyle={styles.horizontalList}
               renderItem={({ item }) => (
                 <TouchableOpacity style={styles.artistCard} activeOpacity={0.8}>
-                  {item.image ? (
-                    <Image source={{ uri: item.image }} style={styles.artistImage} />
-                  ) : (
-                    <View style={styles.artistPlaceholder}>
-                      <Text style={{ fontSize: 20 }}>🎤</Text>
-                    </View>
-                  )}
+                  <View style={styles.artistAvatarWrapper}>
+                    {item.image ? (
+                      <Image source={{ uri: item.image }} style={styles.artistAvatar} />
+                    ) : (
+                      <View style={styles.artistAvatarPlaceholder}>
+                        <Text style={{ fontSize: 22 }}>🎤</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={styles.artistName} numberOfLines={1}>
                     {item.name}
                   </Text>
@@ -285,7 +351,7 @@ export default function HomeScreen() {
             />
 
             {/* ===================================================================== */}
-            {/* 6. TOP BẢNG XẾP HẠNG (List dọc 8 bài)                                */}
+            {/* 8. TOP BẢNG XẾP HẠNG                                                 */}
             {/* ===================================================================== */}
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Bảng xếp hạng Moodify</Text>
@@ -301,12 +367,7 @@ export default function HomeScreen() {
                     onPress={() => playTrack(t)}
                     activeOpacity={0.7}
                   >
-                    <Text
-                      style={[
-                        styles.rankNumber,
-                        index < 3 && styles.rankNumberTop,
-                      ]}
-                    >
+                    <Text style={[styles.rankNumber, index < 3 && styles.rankNumberTop]}>
                       {index + 1}
                     </Text>
 
@@ -319,10 +380,7 @@ export default function HomeScreen() {
                     )}
 
                     <View style={styles.rankInfo}>
-                      <Text
-                        style={[styles.rankTitle, isCurrent && styles.rankTitleActive]}
-                        numberOfLines={1}
-                      >
+                      <Text style={[styles.rankTitle, isCurrent && styles.rankTitleActive]} numberOfLines={1}>
                         {t.name}
                       </Text>
                       <Text style={styles.rankArtist} numberOfLines={1}>
@@ -338,7 +396,7 @@ export default function HomeScreen() {
               })}
             </View>
 
-            <View style={{ height: 100 }} />
+            <View style={{ height: 110 }} />
           </ScrollView>
         )}
       </SafeAreaView>
@@ -349,13 +407,13 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121216',
+    backgroundColor: '#0c0c10',
   },
   safeArea: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 40,
+    paddingBottom: 20,
   },
   centerLoading: {
     flex: 1,
@@ -368,19 +426,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  // 1. Header & Filter Chips
-  header: {
+  // 1. Top Bar
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#121216',
+    paddingTop: 8,
+    paddingBottom: 6,
+  },
+  topBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   avatar: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#6366f1',
+    backgroundColor: '#8b5cf6',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 10,
@@ -390,18 +453,46 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 15,
   },
-  filterScroll: {
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  brandLogo: {
+    width: 26,
+    height: 26,
+  },
+  brandTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#ffffff',
+    letterSpacing: 0.5,
+  },
+  topBarRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
-    paddingRight: 12,
+  },
+  iconBtn: {
+    padding: 6,
+  },
+
+  // 2. Filter Pills
+  filterRow: {
+    paddingBottom: 10,
+  },
+  filterScroll: {
+    paddingHorizontal: 16,
+    gap: 8,
   },
   filterChip: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: '#23232e',
+    backgroundColor: '#1e1e28',
   },
   filterChipActive: {
-    backgroundColor: '#818cf8',
+    backgroundColor: '#8b5cf6',
   },
   filterChipText: {
     color: '#ffffff',
@@ -409,46 +500,42 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   filterChipTextActive: {
-    color: '#000000',
+    color: '#ffffff',
     fontWeight: '800',
   },
-  headerIconBtn: {
-    padding: 6,
-    marginLeft: 4,
-  },
 
-  // 2. Quick Access Grid
+  // 3. Quick Access Grid
   quickGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: 16,
     gap: 8,
-    marginTop: 8,
+    marginTop: 4,
     marginBottom: 20,
   },
   quickCard: {
     width: (width - 40) / 2,
     height: 52,
-    backgroundColor: '#20202c',
-    borderRadius: 6,
+    backgroundColor: '#1a1a24',
+    borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'hidden',
   },
   quickCardActive: {
-    backgroundColor: '#2c2c3e',
+    backgroundColor: '#262638',
     borderWidth: 1,
-    borderColor: '#818cf8',
+    borderColor: '#8b5cf6',
   },
   quickImage: {
     width: 52,
     height: 52,
-    backgroundColor: '#2b2b3b',
+    backgroundColor: '#242432',
   },
-  quickImagePlaceholder: {
+  quickPlaceholder: {
     width: 52,
     height: 52,
-    backgroundColor: '#2b2b3b',
+    backgroundColor: '#242432',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -459,72 +546,104 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     paddingHorizontal: 8,
   },
+  quickPlayGhost: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 6,
+  },
 
-  // 3. Hero / Featured Banner
-  bannerCard: {
-    marginHorizontal: 16,
-    height: 180,
+  // 4. Spotlight Card
+  spotlightContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 24,
+  },
+  spotlightCard: {
+    height: 160,
     borderRadius: 16,
     overflow: 'hidden',
-    marginBottom: 24,
+    position: 'relative',
     backgroundColor: '#1e1b4b',
   },
-  bannerImage: {
+  spotlightBgImage: {
     ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
-    opacity: 0.65,
+    opacity: 0.5,
   },
-  bannerOverlay: {
+  spotlightOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    padding: 16,
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(12, 12, 16, 0.75)',
   },
-  bannerBadge: {
+  spotlightContent: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 16,
+  },
+  spotlightCover: {
+    width: 128,
+    height: 128,
+    borderRadius: 12,
+    backgroundColor: '#262638',
+  },
+  spotlightCoverPlaceholder: {
+    width: 128,
+    height: 128,
+    borderRadius: 12,
+    backgroundColor: '#262638',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  spotlightMeta: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  spotlightBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(139, 92, 246, 0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.5)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 4,
     marginBottom: 6,
   },
-  bannerBadgeText: {
-    color: '#ffffff',
+  spotlightBadgeText: {
+    color: '#c4b5fd',
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 0.5,
   },
-  bannerTitle: {
+  spotlightTitle: {
     color: '#ffffff',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
-    textShadowColor: 'rgba(0,0,0,0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    marginBottom: 2,
   },
-  bannerArtist: {
-    color: '#e2e8f0',
+  spotlightArtist: {
+    color: '#cbd5e1',
     fontSize: 13,
-    marginTop: 2,
     marginBottom: 10,
   },
-  bannerActionRow: {
-    flexDirection: 'row',
-  },
-  bannerPlayBtn: {
+  spotlightPlayBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
     backgroundColor: '#ffffff',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: 20,
     gap: 6,
   },
-  bannerPlayBtnText: {
+  spotlightPlayBtnText: {
     color: '#000000',
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
   },
 
   // Section Headers
@@ -534,7 +653,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     marginBottom: 12,
-    marginTop: 10,
+    marginTop: 6,
   },
   sectionTitle: {
     color: '#ffffff',
@@ -547,11 +666,33 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // 4. Horizontal Track Carousel
+  // 5. Mood Cards
+  moodScroll: {
+    paddingHorizontal: 16,
+    gap: 10,
+    paddingBottom: 16,
+  },
+  moodCard: {
+    width: 140,
+    height: 70,
+    borderRadius: 10,
+    padding: 10,
+    justifyContent: 'space-between',
+  },
+  moodIcon: {
+    fontSize: 18,
+  },
+  moodName: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  // 6. Track Carousel
   horizontalList: {
     paddingHorizontal: 16,
     gap: 14,
-    paddingBottom: 8,
+    paddingBottom: 16,
   },
   trackCard: {
     width: 144,
@@ -561,7 +702,7 @@ const styles = StyleSheet.create({
     height: 144,
     borderRadius: 10,
     overflow: 'hidden',
-    backgroundColor: '#23232e',
+    backgroundColor: '#1f1f2e',
     position: 'relative',
     marginBottom: 8,
   },
@@ -569,16 +710,16 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  cardImagePlaceholder: {
+  cardPlaceholder: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  playingBadge: {
+  cardPlayingBadge: {
     position: 'absolute',
     bottom: 8,
     right: 8,
-    backgroundColor: '#6366f1',
+    backgroundColor: '#8b5cf6',
     width: 26,
     height: 26,
     borderRadius: 13,
@@ -596,26 +737,29 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // 5. Artist Carousel
+  // 7. Artist Carousel
   artistCard: {
-    width: 100,
+    width: 96,
     alignItems: 'center',
   },
-  artistImage: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: '#23232e',
+  artistAvatarWrapper: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#2e2e40',
     marginBottom: 8,
+    backgroundColor: '#1f1f2e',
   },
-  artistPlaceholder: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: '#23232e',
+  artistAvatar: {
+    width: '100%',
+    height: '100%',
+  },
+  artistAvatarPlaceholder: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
   },
   artistName: {
     color: '#ffffff',
@@ -624,20 +768,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // 6. Rank List
+  // 8. Rank List
   rankList: {
     paddingHorizontal: 16,
-    gap: 12,
+    gap: 8,
   },
   rankItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
+    paddingVertical: 8,
     paddingHorizontal: 8,
     borderRadius: 8,
   },
   rankItemActive: {
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    backgroundColor: 'rgba(139, 92, 246, 0.15)',
   },
   rankNumber: {
     width: 24,
@@ -648,21 +792,21 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   rankNumberTop: {
-    color: '#818cf8',
+    color: '#a78bfa',
     fontSize: 18,
   },
   rankThumb: {
     width: 46,
     height: 46,
     borderRadius: 6,
-    backgroundColor: '#23232e',
+    backgroundColor: '#1f1f2e',
     marginRight: 12,
   },
   rankThumbPlaceholder: {
     width: 46,
     height: 46,
     borderRadius: 6,
-    backgroundColor: '#23232e',
+    backgroundColor: '#1f1f2e',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -676,7 +820,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   rankTitleActive: {
-    color: '#818cf8',
+    color: '#a78bfa',
   },
   rankArtist: {
     color: '#9ca3af',

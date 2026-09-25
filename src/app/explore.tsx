@@ -1,180 +1,300 @@
-import { Image } from 'expo-image';
-import { SymbolView } from 'expo-symbols';
-import { Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useState, useEffect } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  Image,
+  ActivityIndicator,
+  Dimensions,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { TrackApi } from '@/services/api';
+import { Track } from '@/types';
+import { usePlayer } from '@/context/PlayerContext';
 
-import { ExternalLink } from '@/components/external-link';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Collapsible } from '@/components/ui/collapsible';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+const { width } = Dimensions.get('window');
 
-export default function TabTwoScreen() {
-  const safeAreaInsets = useSafeAreaInsets();
-  const insets = {
-    ...safeAreaInsets,
-    bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
-  };
-  const theme = useTheme();
+const BROWSE_CATEGORIES = [
+  { id: '1', title: 'V-Pop', color: '#881337', icon: '🎤' },
+  { id: '2', title: 'Rap Việt', color: '#78350f', icon: '🔥' },
+  { id: '3', title: 'Indie Việt', color: '#581c87', icon: '🎸' },
+  { id: '4', title: 'Tâm Trạng', color: '#831843', icon: '💔' },
+  { id: '5', title: 'Thư Giãn', color: '#14532d', icon: '🌙' },
+  { id: '6', title: 'Tập Trung', color: '#1e3a8a', icon: '☕' },
+  { id: '7', title: 'Party / EDM', color: '#0369a1', icon: '🎉' },
+  { id: '8', title: 'Bảng Xếp Hạng', color: '#431407', icon: '🏆' },
+];
 
-  const contentPlatformStyle = Platform.select({
-    android: {
-      paddingTop: insets.top,
-      paddingLeft: insets.left,
-      paddingRight: insets.right,
-      paddingBottom: insets.bottom,
-    },
-    web: {
-      paddingTop: Spacing.six,
-      paddingBottom: Spacing.four,
-    },
-  });
+export default function SearchScreen() {
+  const { playTrack, currentTrack } = usePlayer();
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<Track[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const data = await TrackApi.searchTracks(query.trim(), 0, 30);
+        setResults(data.content || []);
+      } catch (err) {
+        console.warn('Lỗi tìm kiếm:', err);
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [query]);
 
   return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: theme.background }]}
-      contentInset={insets}
-      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
-      <ThemedView style={styles.container}>
-        <ThemedView style={styles.titleContainer}>
-          <ThemedText type="subtitle">Explore</ThemedText>
-          <ThemedText style={styles.centerText} themeColor="textSecondary">
-            This starter app includes example{'\n'}code to help you get started.
-          </ThemedText>
+    <View style={styles.container}>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        {/* Header Title */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Tìm kiếm</Text>
+          <TouchableOpacity style={styles.cameraBtn}>
+            <Ionicons name="camera-outline" size={24} color="#ffffff" />
+          </TouchableOpacity>
+        </View>
 
-          <ExternalLink href="https://docs.expo.dev" asChild>
-            <Pressable style={({ pressed }) => pressed && styles.pressed}>
-              <ThemedView type="backgroundElement" style={styles.linkButton}>
-                <ThemedText type="link">Expo documentation</ThemedText>
-                <SymbolView
-                  tintColor={theme.text}
-                  name={{ ios: 'arrow.up.right.square', android: 'link', web: 'link' }}
-                  size={12}
-                />
-              </ThemedView>
-            </Pressable>
-          </ExternalLink>
-        </ThemedView>
+        {/* Search Input Box */}
+        <View style={styles.searchBar}>
+          <Ionicons name="search" size={20} color="#121216" style={{ marginRight: 8 }} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Bạn muốn nghe bài gì?"
+            placeholderTextColor="#6b7280"
+            value={query}
+            onChangeText={setQuery}
+            returnKeyType="search"
+          />
+          {query !== '' && (
+            <TouchableOpacity onPress={() => setQuery('')}>
+              <Ionicons name="close-circle" size={18} color="#6b7280" />
+            </TouchableOpacity>
+          )}
+        </View>
 
-        <ThemedView style={styles.sectionsWrapper}>
-          <Collapsible title="File-based routing">
-            <ThemedText type="small">
-              This app has two screens: <ThemedText type="code">src/app/index.tsx</ThemedText> and{' '}
-              <ThemedText type="code">src/app/explore.tsx</ThemedText>
-            </ThemedText>
-            <ThemedText type="small">
-              The layout file in <ThemedText type="code">src/app/_layout.tsx</ThemedText> sets up
-              the tab navigator.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/router/introduction">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
-
-          <Collapsible title="Android, iOS, and web support">
-            <ThemedView type="backgroundElement" style={styles.collapsibleContent}>
-              <ThemedText type="small">
-                You can open this project on Android, iOS, and the web. To open the web version,
-                press <ThemedText type="smallBold">w</ThemedText> in the terminal running this
-                project.
-              </ThemedText>
-              <Image
-                source={require('@/assets/images/tutorial-web.png')}
-                style={styles.imageTutorial}
-              />
-            </ThemedView>
-          </Collapsible>
-
-          <Collapsible title="Images">
-            <ThemedText type="small">
-              For static images, you can use the <ThemedText type="code">@2x</ThemedText> and{' '}
-              <ThemedText type="code">@3x</ThemedText> suffixes to provide files for different
-              screen densities.
-            </ThemedText>
-            <Image source={require('@/assets/images/react-logo.png')} style={styles.imageReact} />
-            <ExternalLink href="https://reactnative.dev/docs/images">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
-
-          <Collapsible title="Light and dark mode components">
-            <ThemedText type="small">
-              This template has light and dark mode support. The{' '}
-              <ThemedText type="code">useColorScheme()</ThemedText> hook lets you inspect what the
-              user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
-
-          <Collapsible title="Animations">
-            <ThemedText type="small">
-              This template includes an example of an animated component. The{' '}
-              <ThemedText type="code">src/components/ui/collapsible.tsx</ThemedText> component uses
-              the powerful <ThemedText type="code">react-native-reanimated</ThemedText> library to
-              animate opening this hint.
-            </ThemedText>
-          </Collapsible>
-        </ThemedView>
-        {Platform.OS === 'web' && <WebBadge />}
-      </ThemedView>
-    </ScrollView>
+        {/* Search Results or Browse Categories */}
+        {query.trim() !== '' ? (
+          searching ? (
+            <View style={styles.centerBox}>
+              <ActivityIndicator color="#8b5cf6" size="large" />
+              <Text style={styles.hintText}>Đang tìm kiếm bài hát...</Text>
+            </View>
+          ) : results.length === 0 ? (
+            <View style={styles.centerBox}>
+              <Text style={{ fontSize: 40, marginBottom: 12 }}>🔍</Text>
+              <Text style={styles.notFoundTitle}>Không tìm thấy kết quả</Text>
+              <Text style={styles.hintText}>Thử tìm từ khóa khác hoặc tên nghệ sĩ</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={results}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.resultList}
+              renderItem={({ item }) => {
+                const isCurrent = currentTrack?.id === item.id;
+                return (
+                  <TouchableOpacity
+                    style={[styles.resultItem, isCurrent && styles.resultItemActive]}
+                    onPress={() => playTrack(item)}
+                    activeOpacity={0.7}
+                  >
+                    {item.imageUrl ? (
+                      <Image source={{ uri: item.imageUrl }} style={styles.resultCover} />
+                    ) : (
+                      <View style={styles.resultCoverPlaceholder}>
+                        <Text style={{ fontSize: 16 }}>🎵</Text>
+                      </View>
+                    )}
+                    <View style={styles.resultInfo}>
+                      <Text style={[styles.resultTitle, isCurrent && styles.resultTitleActive]} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.resultArtist} numberOfLines={1}>
+                        {item.artistName} {item.albumName ? `• ${item.albumName}` : ''}
+                      </Text>
+                    </View>
+                    <Ionicons name="play-circle-outline" size={26} color="#8b5cf6" />
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          )
+        ) : (
+          <FlatList
+            data={BROWSE_CATEGORIES}
+            keyExtractor={(item) => item.id}
+            numColumns={2}
+            contentContainerStyle={styles.categoryGrid}
+            columnWrapperStyle={styles.categoryRow}
+            ListHeaderComponent={
+              <Text style={styles.browseTitle}>Duyệt tìm tất cả</Text>
+            }
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[styles.categoryCard, { backgroundColor: item.color }]}
+                onPress={() => setQuery(item.title)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.categoryCardTitle}>{item.title}</Text>
+                <Text style={styles.categoryCardIcon}>{item.icon}</Text>
+              </TouchableOpacity>
+            )}
+          />
+        )}
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
+  container: {
+    flex: 1,
+    backgroundColor: '#0c0c10',
+  },
+  safeArea: {
     flex: 1,
   },
-  contentContainer: {
+  header: {
     flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  container: {
-    maxWidth: MaxContentWidth,
-    flexGrow: 1,
-  },
-  titleContainer: {
-    gap: Spacing.three,
     alignItems: 'center',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.six,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    marginBottom: 12,
   },
-  centerText: {
-    textAlign: 'center',
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#ffffff',
   },
-  pressed: {
-    opacity: 0.7,
+  cameraBtn: {
+    padding: 6,
   },
-  linkButton: {
+  searchBar: {
     flexDirection: 'row',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.five,
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    marginHorizontal: 16,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    height: 44,
+    marginBottom: 16,
+  },
+  searchInput: {
+    flex: 1,
+    color: '#121216',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  browseTitle: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 14,
+  },
+  categoryGrid: {
+    paddingHorizontal: 16,
+    paddingBottom: 90,
+  },
+  categoryRow: {
+    gap: 12,
+    marginBottom: 12,
+  },
+  categoryCard: {
+    width: (width - 44) / 2,
+    height: 90,
+    borderRadius: 8,
+    padding: 12,
+    justifyContent: 'space-between',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  categoryCardTitle: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  categoryCardIcon: {
+    position: 'absolute',
+    right: 8,
+    bottom: 8,
+    fontSize: 26,
+    transform: [{ rotate: '15deg' }],
+  },
+  centerBox: {
+    flex: 1,
     justifyContent: 'center',
-    gap: Spacing.one,
     alignItems: 'center',
+    paddingBottom: 60,
   },
-  sectionsWrapper: {
-    gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.three,
+  notFoundTitle: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
   },
-  collapsibleContent: {
+  hintText: {
+    color: '#9ca3af',
+    fontSize: 13,
+  },
+  resultList: {
+    paddingHorizontal: 16,
+    paddingBottom: 90,
+    gap: 8,
+  },
+  resultItem: {
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 8,
   },
-  imageTutorial: {
-    width: '100%',
-    aspectRatio: 296 / 171,
-    borderRadius: Spacing.three,
-    marginTop: Spacing.two,
+  resultItemActive: {
+    backgroundColor: 'rgba(139, 92, 246, 0.15)',
   },
-  imageReact: {
-    width: 100,
-    height: 100,
-    alignSelf: 'center',
+  resultCover: {
+    width: 48,
+    height: 48,
+    borderRadius: 6,
+    backgroundColor: '#1f1f2e',
+    marginRight: 12,
+  },
+  resultCoverPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 6,
+    backgroundColor: '#1f1f2e',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  resultInfo: {
+    flex: 1,
+  },
+  resultTitle: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  resultTitleActive: {
+    color: '#a78bfa',
+  },
+  resultArtist: {
+    color: '#9ca3af',
+    fontSize: 12,
+    marginTop: 2,
   },
 });
