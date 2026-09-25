@@ -4,6 +4,8 @@ import { LogBox, useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
+import { PlayerProvider } from '@/context/PlayerContext';
+import { MiniPlayer } from '@/components/player/MiniPlayer';
 
 LogBox.ignoreLogs(['Cannot connect to Expo CLI']);
 
@@ -13,8 +15,11 @@ export default function TabLayout() {
   const colorScheme = useColorScheme();
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
+      <PlayerProvider>
+        <AnimatedSplashOverlay />
+        <AppTabs />
+        <MiniPlayer />
+      </PlayerProvider>
     </ThemeProvider>
   );
 }
