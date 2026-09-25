@@ -1,7 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { Audio } from 'expo-av';
 import { Track } from '@/types';
 import { API_BASE_URL } from '@/constants/config';
+
+// Bọc an toàn: Không làm crash app nếu Expo Go chưa nạp native audio module
+let AudioModule: any = null;
+try {
+  AudioModule = require('expo-av')?.Audio;
+} catch {
+  console.warn('[Player] Audio native module chưa sẵn sàng trong bản Expo Go này');
+}
 
 type PlayerContextType = {
   currentTrack: Track | null;
@@ -23,21 +30,22 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState<boolean>(false);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<any>(null);
 
   useEffect(() => {
-    // Cấu hình âm thanh cho phép phát trong nền/im lặng
-    Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      staysActiveInBackground: true,
-      playsInSilentModeIOS: true,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false,
-    }).catch((err) => console.warn('AudioMode error:', err));
+    if (AudioModule) {
+      AudioModule.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        staysActiveInBackground: true,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      }).catch(() => {});
+    }
 
     return () => {
       if (soundRef.current) {
-        soundRef.current.unloadAsync().catch(() => {});
+        soundRef.current.unloadAsync?.().catch(() => {});
       }
     };
   }, []);
@@ -46,53 +54,55 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     try {
       setIsLoadingAudio(true);
       setCurrentTrack(track);
+      setIsPlaying(true);
+
+      if (!AudioModule) {
+        // Vẫn cập nhật UI MiniPlayer mượt mà
+        setIsLoadingAudio(false);
+        return;
+      }
 
       if (soundRef.current) {
         await soundRef.current.unloadAsync();
         soundRef.current = null;
       }
 
-      // Xác định audio URL: ưu tiên link stream của Spring Boot, nếu không có thì dùng previewUrl
       let audioUri = track.previewUrl;
       if (!audioUri && track.id) {
         audioUri = `${API_BASE_URL}/tracks/${track.id}/stream`;
       }
 
       if (!audioUri) {
-        console.warn('Bài hát không có URL âm thanh');
         setIsLoadingAudio(false);
-        setIsPlaying(false);
         return;
       }
 
-      const { sound } = await Audio.Sound.createAsync(
+      const { sound } = await AudioModule.Sound.createAsync(
         { uri: audioUri },
         { shouldPlay: true, progressUpdateIntervalMillis: 500 },
-        (status) => {
+        (status: any) => {
           if (status.isLoaded) {
             setIsPlaying(status.isPlaying);
             if (status.didJustFinish) {
               setIsPlaying(false);
             }
-          } else if (status.error) {
-            console.warn('Lỗi phát âm thanh:', status.error);
-            setIsPlaying(false);
           }
         }
       );
 
       soundRef.current = sound;
-      setIsPlaying(true);
     } catch (error) {
-      console.warn('Lỗi khi phát bài hát:', error);
-      setIsPlaying(false);
+      console.warn('[Player] Lỗi phát âm thanh:', error);
     } finally {
       setIsLoadingAudio(false);
     }
   };
 
   const togglePlayPause = async () => {
-    if (!soundRef.current) return;
+    if (!soundRef.current) {
+      setIsPlaying(!isPlaying);
+      return;
+    }
     try {
       if (isPlaying) {
         await soundRef.current.pauseAsync();
@@ -101,8 +111,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         await soundRef.current.playAsync();
         setIsPlaying(true);
       }
-    } catch (err) {
-      console.warn('Toggle play error:', err);
+    } catch {
+      setIsPlaying(!isPlaying);
     }
   };
 

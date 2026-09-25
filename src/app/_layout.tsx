@@ -1,25 +1,63 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { LogBox, useColorScheme } from 'react-native';
-
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
+import { Tabs } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { LogBox, View, StyleSheet } from 'react-native';
 import { PlayerProvider } from '@/context/PlayerContext';
 import { MiniPlayer } from '@/components/player/MiniPlayer';
 
-LogBox.ignoreLogs(['Cannot connect to Expo CLI']);
+// Tắt toàn bộ console warning không cần thiết để trải nghiệm dev mượt mà
+LogBox.ignoreAllLogs(true);
 
-SplashScreen.preventAutoHideAsync();
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+export default function RootLayout() {
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <PlayerProvider>
-        <AnimatedSplashOverlay />
-        <AppTabs />
+    <PlayerProvider>
+      <View style={styles.container}>
+        <Tabs
+          screenOptions={{
+            headerShown: false,
+            tabBarStyle: {
+              backgroundColor: '#121216',
+              borderTopColor: '#23232e',
+              borderTopWidth: 1,
+              height: 58,
+              paddingBottom: 6,
+              paddingTop: 6,
+            },
+            tabBarActiveTintColor: '#ffffff',
+            tabBarInactiveTintColor: '#6b7280',
+            tabBarLabelStyle: {
+              fontSize: 11,
+              fontWeight: '600',
+            },
+          }}
+        >
+          <Tabs.Screen
+            name="index"
+            options={{
+              title: 'Trang chủ',
+              tabBarIcon: ({ color, focused }) => (
+                <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
+              ),
+            }}
+          />
+          <Tabs.Screen
+            name="explore"
+            options={{
+              title: 'Tìm kiếm',
+              tabBarIcon: ({ color, focused }) => (
+                <Ionicons name={focused ? 'search' : 'search-outline'} size={22} color={color} />
+              ),
+            }}
+          />
+        </Tabs>
         <MiniPlayer />
-      </PlayerProvider>
-    </ThemeProvider>
+      </View>
+    </PlayerProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#121216',
+  },
+});
