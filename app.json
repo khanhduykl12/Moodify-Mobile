@@ -1,27 +1,27 @@
 {
   "expo": {
-    "name": "Moodify-Mobile",
-    "slug": "Moodify-Mobile",
+    "name": "Moodify",
+    "slug": "moodify",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "moodifymobile",
-    "userInterfaceStyle": "automatic",
+    "icon": "./assets/images/moodify-logo.png",
+    "scheme": "moodify",
+    "userInterfaceStyle": "dark",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/moodify-logo.png"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#0a0a0f",
+        "foregroundImage": "./assets/images/moodify-logo.png",
+        "backgroundImage": "./assets/images/moodify-logo.png",
+        "monochromeImage": "./assets/images/moodify-logo.png"
       },
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/moodify-logo.png"
     },
     "plugins": [
       "expo-router",
