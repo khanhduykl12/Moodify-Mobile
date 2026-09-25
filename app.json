@@ -4,19 +4,26 @@
     "slug": "moodify",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/moodify-logo.png",
+    "icon": "./assets/images/moodify-icon.png",
     "scheme": "moodify",
     "userInterfaceStyle": "dark",
+    "backgroundColor": "#0a0a0f",
+    "primaryColor": "#8b5cf6",
+    "splash": {
+      "image": "./assets/images/moodify-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a0f"
+    },
     "ios": {
-      "icon": "./assets/images/moodify-logo.png"
+      "icon": "./assets/images/moodify-icon.png"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#0a0a0f",
-        "foregroundImage": "./assets/images/moodify-logo.png",
-        "backgroundImage": "./assets/images/moodify-logo.png",
-        "monochromeImage": "./assets/images/moodify-logo.png"
+        "foregroundImage": "./assets/images/moodify-icon.png",
+        "backgroundImage": "./assets/images/moodify-icon.png"
       },
+      "backgroundColor": "#0a0a0f",
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -30,10 +37,11 @@
         {
           "backgroundColor": "#0a0a0f",
           "image": "./assets/images/moodify-logo.png",
-          "imageWidth": 120
+          "imageWidth": 140
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true,

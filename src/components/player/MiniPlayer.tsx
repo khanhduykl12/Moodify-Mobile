@@ -4,10 +4,12 @@ import { usePlayer } from '@/context/PlayerContext';
 import { Ionicons } from '@expo/vector-icons';
 
 export const MiniPlayer: React.FC = () => {
-  const { currentTrack, isPlaying, togglePlayPause, isLoadingAudio } = usePlayer();
+  const { currentTrack, isPlaying, togglePlayPause, isLoadingAudio, currentTime, duration } = usePlayer();
   const [isLiked, setIsLiked] = useState(false);
 
   if (!currentTrack) return null;
+
+  const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : (isPlaying ? 30 : 0);
 
   return (
     <View style={styles.container}>
@@ -68,7 +70,7 @@ export const MiniPlayer: React.FC = () => {
 
       {/* Progress Bar Accent Line */}
       <View style={styles.progressBar}>
-        <View style={[styles.progressFill, { width: isPlaying ? '60%' : '20%' }]} />
+        <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
       </View>
     </View>
   );

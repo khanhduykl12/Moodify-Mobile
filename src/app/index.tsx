@@ -79,11 +79,18 @@ export default function HomeScreen() {
     });
   }, [allTracks, selectedFilter]);
 
-  // 6 bài hát gần đây cho ô lưới Quick Access (2 cột x 3 hàng)
-  const quickAccessTracks = useMemo(() => allTracks.slice(0, 6), [allTracks]);
+  // Ưu tiên các bài hát có sẵn audio stream MP3 từ Spring Boot để bấm là nghe nhạc ngay
+  const playableTracks = useMemo(() => {
+    const withAudio = allTracks.filter((t) => t.localPath || t.previewUrl);
+    const withoutAudio = allTracks.filter((t) => !t.localPath && !t.previewUrl);
+    return [...withAudio, ...withoutAudio];
+  }, [allTracks]);
 
-  // Bài hát tiêu điểm Spotlight
-  const spotlightTrack = useMemo(() => allTracks[1] || allTracks[0] || null, [allTracks]);
+  // 6 bài hát gần đây cho ô lưới Quick Access (2 cột x 3 hàng)
+  const quickAccessTracks = useMemo(() => playableTracks.slice(0, 6), [playableTracks]);
+
+  // Bài hát tiêu điểm Spotlight (bài hit có audio MP3 đỉnh nhất)
+  const spotlightTrack = useMemo(() => playableTracks[0] || null, [playableTracks]);
 
   // Danh sách nghệ sĩ
   const featuredArtists = useMemo(() => {
