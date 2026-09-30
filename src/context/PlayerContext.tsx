@@ -7,11 +7,18 @@ import { API_BASE_URL } from '@/constants/config';
 type PlayerContextType = {
   currentTrack: Track | null;
   isPlaying: boolean;
-  playTrack: (track: Track) => void;
+  playTrack: (track: Track, newPlaylist?: Track[]) => void;
   togglePlayPause: () => void;
   isLoadingAudio: boolean;
   currentTime: number;
   duration: number;
+  seekTo: (seconds: number) => void;
+  isPlayerModalVisible: boolean;
+  openPlayerModal: () => void;
+  closePlayerModal: () => void;
+  playNext: () => void;
+  playPrev: () => void;
+  playlist: Track[];
 };
 
 const PlayerContext = createContext<PlayerContextType>({
@@ -22,6 +29,13 @@ const PlayerContext = createContext<PlayerContextType>({
   isLoadingAudio: false,
   currentTime: 0,
   duration: 0,
+  seekTo: () => {},
+  isPlayerModalVisible: false,
+  openPlayerModal: () => {},
+  closePlayerModal: () => {},
+  playNext: () => {},
+  playPrev: () => {},
+  playlist: [],
 });
 
 const AUDIO_HTML = `
@@ -72,6 +86,12 @@ const AUDIO_HTML = `
       window.resumeSong = function() {
         audio.play().catch(function(err) {});
       };
+
+      window.seekSong = function(seconds) {
+        if (isFinite(seconds)) {
+          audio.currentTime = seconds;
+        }
+      };
     </script>
   </body>
 </html>
@@ -79,15 +99,23 @@ const AUDIO_HTML = `
 
 export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
+  const [playlist, setPlaylist] = useState<Track[]>([]);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
+  const [isPlayerModalVisible, setIsPlayerModalVisible] = useState<boolean>(false);
   const webViewRef = useRef<WebView | null>(null);
 
-  const playTrack = (track: Track) => {
+  const playTrack = (track: Track, newPlaylist?: Track[]) => {
     setIsLoadingAudio(true);
     setCurrentTrack(track);
+
+    if (newPlaylist && newPlaylist.length > 0) {
+      setPlaylist(newPlaylist);
+    } else if (playlist.length === 0) {
+      setPlaylist([track]);
+    }
 
     let audioUri = track.previewUrl;
     if (!audioUri && track.id) {
@@ -95,7 +123,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     if (!audioUri) {
-      Alert.alert('Thông báo', `Bài hát "${track.name}" hiện chưa có file âm thanh trên hệ thống.`);
+      Alert.alert('Thông báo', `Bài hát "${track.name}" hiện chưa có file âm thanh.`);
       setIsLoadingAudio(false);
       setIsPlaying(false);
       return;
@@ -122,6 +150,26 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
+  const seekTo = (seconds: number) => {
+    if (!webViewRef.current) return;
+    setCurrentTime(seconds);
+    webViewRef.current.injectJavaScript(`window.seekSong(${seconds}); true;`);
+  };
+
+  const playNext = () => {
+    if (!currentTrack || playlist.length === 0) return;
+    const currentIndex = playlist.findIndex((t) => t.id === currentTrack.id);
+    const nextIndex = (currentIndex + 1) % playlist.length;
+    playTrack(playlist[nextIndex]);
+  };
+
+  const playPrev = () => {
+    if (!currentTrack || playlist.length === 0) return;
+    const currentIndex = playlist.findIndex((t) => t.id === currentTrack.id);
+    const prevIndex = (currentIndex - 1 + playlist.length) % playlist.length;
+    playTrack(playlist[prevIndex]);
+  };
+
   const handleMessage = (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
@@ -132,6 +180,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       } else if (data.type === 'ended') {
         setIsPlaying(false);
         setCurrentTime(0);
+        playNext();
       } else if (data.type === 'timeupdate') {
         setCurrentTime(data.currentTime);
         if (data.duration && data.duration > 0) {
@@ -151,6 +200,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         isLoadingAudio,
         currentTime,
         duration,
+        seekTo,
+        isPlayerModalVisible,
+        openPlayerModal: () => setIsPlayerModalVisible(true),
+        closePlayerModal: () => setIsPlayerModalVisible(false),
+        playNext,
+        playPrev,
+        playlist,
       }}
     >
       {children}

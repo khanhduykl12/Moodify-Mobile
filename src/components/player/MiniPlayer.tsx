@@ -4,7 +4,15 @@ import { usePlayer } from '@/context/PlayerContext';
 import { Ionicons } from '@expo/vector-icons';
 
 export const MiniPlayer: React.FC = () => {
-  const { currentTrack, isPlaying, togglePlayPause, isLoadingAudio, currentTime, duration } = usePlayer();
+  const {
+    currentTrack,
+    isPlaying,
+    togglePlayPause,
+    isLoadingAudio,
+    currentTime,
+    duration,
+    openPlayerModal,
+  } = usePlayer();
   const [isLiked, setIsLiked] = useState(false);
 
   if (!currentTrack) return null;
@@ -14,7 +22,7 @@ export const MiniPlayer: React.FC = () => {
   return (
     <View style={styles.container}>
       {/* Background card with subtle glassmorphism */}
-      <View style={styles.card}>
+      <TouchableOpacity style={styles.card} activeOpacity={0.9} onPress={openPlayerModal}>
         {/* Cover Art */}
         {currentTrack.imageUrl ? (
           <Image source={{ uri: currentTrack.imageUrl }} style={styles.cover} />
@@ -66,7 +74,7 @@ export const MiniPlayer: React.FC = () => {
             )}
           </TouchableOpacity>
         </View>
-      </View>
+      </TouchableOpacity>
 
       {/* Progress Bar Accent Line */}
       <View style={styles.progressBar}>
