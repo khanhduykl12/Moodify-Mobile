@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -8,10 +8,14 @@ import {
   Image,
   Dimensions,
   ScrollView,
+  Alert,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { usePlayer } from '@/context/PlayerContext';
+import { PlaylistApi } from '@/services/api';
+import { Playlist } from '@/types';
 
 const { width, height } = Dimensions.get('window');
 
@@ -34,14 +38,43 @@ export const FullscreenPlayer: React.FC = () => {
     closePlayerModal,
     playNext,
     playPrev,
+    isLiked,
+    toggleLikeTrack,
   } = usePlayer();
 
-  const [isLiked, setIsLiked] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
   const [isRepeat, setIsRepeat] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
+  const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [loadingPlaylists, setLoadingPlaylists] = useState(false);
+
+  useEffect(() => {
+    if (showPlaylistPicker) {
+      setLoadingPlaylists(true);
+      PlaylistApi.getMyPlaylists()
+        .then((res) => setPlaylists(res || []))
+        .catch(() => setPlaylists([]))
+        .finally(() => setLoadingPlaylists(false));
+    }
+  }, [showPlaylistPicker]);
+
+  const handleAddToPlaylist = async (pl: Playlist) => {
+    if (!currentTrack) return;
+    try {
+      const trackId = currentTrack.spotifyId || currentTrack.id;
+      await PlaylistApi.addTrackToPlaylist(pl.id, trackId);
+      Alert.alert('Thành công', `Đã thêm "${currentTrack.name}" vào "${pl.name}"!`);
+      setShowPlaylistPicker(false);
+    } catch {
+      Alert.alert('Thông báo', 'Không thể thêm bài hát vào danh sách phát (có thể bài hát đã có trong playlist).');
+    }
+  };
 
   if (!currentTrack) return null;
+
+  const trackKey = currentTrack.spotifyId || currentTrack.id;
+  const liked = isLiked(trackKey);
 
   const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
 
@@ -85,8 +118,8 @@ export const FullscreenPlayer: React.FC = () => {
               </Text>
             </View>
 
-            <TouchableOpacity style={styles.headerBtn}>
-              <Ionicons name="ellipsis-horizontal" size={22} color="#ffffff" />
+            <TouchableOpacity style={styles.headerBtn} onPress={() => setShowPlaylistPicker(true)}>
+              <Ionicons name="bookmark-outline" size={24} color="#ffffff" />
             </TouchableOpacity>
           </View>
 
@@ -113,11 +146,11 @@ export const FullscreenPlayer: React.FC = () => {
                 </Text>
               </View>
 
-              <TouchableOpacity onPress={() => setIsLiked(!isLiked)} style={styles.likeBtn}>
+              <TouchableOpacity onPress={() => toggleLikeTrack(currentTrack)} style={styles.likeBtn}>
                 <Ionicons
-                  name={isLiked ? 'heart' : 'heart-outline'}
+                  name={liked ? 'heart' : 'heart-outline'}
                   size={28}
-                  color={isLiked ? '#ec4899' : '#ffffff'}
+                  color={liked ? '#ec4899' : '#ffffff'}
                 />
               </TouchableOpacity>
             </View>
@@ -208,6 +241,55 @@ export const FullscreenPlayer: React.FC = () => {
               </View>
             )}
           </ScrollView>
+
+          {/* Playlist Picker Sheet Modal */}
+          <Modal
+            visible={showPlaylistPicker}
+            animationType="fade"
+            transparent={true}
+            onRequestClose={() => setShowPlaylistPicker(false)}
+          >
+            <View style={styles.sheetOverlay}>
+              <View style={styles.sheetCard}>
+                <Text style={styles.sheetTitle}>Thêm vào danh sách phát</Text>
+                <Text style={styles.sheetSubtitle}>
+                  Chọn playlist bạn muốn lưu bài hát "{currentTrack.name}"
+                </Text>
+
+                {playlists.length === 0 ? (
+                  <View style={styles.emptyPlaylistNotice}>
+                    <Text style={styles.emptyNoticeText}>Chưa có danh sách phát nào.</Text>
+                    <Text style={styles.emptyNoticeSub}>Hãy tạo playlist mới tại tab Thư viện!</Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    data={playlists}
+                    keyExtractor={(item) => item.id}
+                    style={{ maxHeight: 260 }}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        style={styles.sheetPlaylistItem}
+                        onPress={() => handleAddToPlaylist(item)}
+                      >
+                        <Ionicons name="musical-notes" size={20} color="#a78bfa" />
+                        <Text style={styles.sheetPlaylistName} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        <Ionicons name="add" size={20} color="#9ca3af" />
+                      </TouchableOpacity>
+                    )}
+                  />
+                )}
+
+                <TouchableOpacity
+                  style={styles.sheetCloseBtn}
+                  onPress={() => setShowPlaylistPicker(false)}
+                >
+                  <Text style={styles.sheetCloseText}>Đóng</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
         </SafeAreaView>
       </View>
     </Modal>
@@ -412,5 +494,71 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 24,
     fontWeight: '500',
+  },
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  sheetCard: {
+    width: '100%',
+    backgroundColor: '#161622',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#2e2e42',
+  },
+  sheetTitle: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  sheetSubtitle: {
+    color: '#9ca3af',
+    fontSize: 13,
+    marginBottom: 16,
+  },
+  emptyPlaylistNotice: {
+    paddingVertical: 24,
+    alignItems: 'center',
+  },
+  emptyNoticeText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  emptyNoticeSub: {
+    color: '#6b7280',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  sheetPlaylistItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#232336',
+  },
+  sheetPlaylistName: {
+    flex: 1,
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '600',
+    marginLeft: 12,
+  },
+  sheetCloseBtn: {
+    marginTop: 16,
+    paddingVertical: 12,
+    backgroundColor: '#26263a',
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  sheetCloseText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

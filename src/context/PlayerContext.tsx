@@ -1,8 +1,9 @@
-import React, { createContext, useContext, useState, useRef } from 'react';
+import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Track } from '@/types';
 import { API_BASE_URL } from '@/constants/config';
+import { UserLibraryApi } from '@/services/api';
 
 type PlayerContextType = {
   currentTrack: Track | null;
@@ -19,6 +20,8 @@ type PlayerContextType = {
   playNext: () => void;
   playPrev: () => void;
   playlist: Track[];
+  isLiked: (trackIdOrSpotifyId?: string) => boolean;
+  toggleLikeTrack: (track: Track) => Promise<void>;
 };
 
 const PlayerContext = createContext<PlayerContextType>({
@@ -36,6 +39,8 @@ const PlayerContext = createContext<PlayerContextType>({
   playNext: () => {},
   playPrev: () => {},
   playlist: [],
+  isLiked: () => false,
+  toggleLikeTrack: async () => {},
 });
 
 const AUDIO_HTML = `
@@ -105,7 +110,50 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
   const [isPlayerModalVisible, setIsPlayerModalVisible] = useState<boolean>(false);
+  const [likedTrackIds, setLikedTrackIds] = useState<Set<string>>(new Set());
   const webViewRef = useRef<WebView | null>(null);
+
+  useEffect(() => {
+    // Tải danh sách các bài hát đã thích khi khởi động
+    UserLibraryApi.getLikedTrackIds()
+      .then((ids) => {
+        if (ids && ids.length > 0) {
+          setLikedTrackIds(new Set(ids));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const isLiked = (trackIdOrSpotifyId?: string): boolean => {
+    if (!trackIdOrSpotifyId) return false;
+    return likedTrackIds.has(trackIdOrSpotifyId);
+  };
+
+  const toggleLikeTrack = async (track: Track) => {
+    const trackKey = track.spotifyId || track.id;
+    if (!trackKey) return;
+
+    const currentlyLiked = likedTrackIds.has(trackKey);
+    const updated = new Set(likedTrackIds);
+
+    if (currentlyLiked) {
+      updated.delete(trackKey);
+      setLikedTrackIds(updated);
+      try {
+        await UserLibraryApi.unlikeTrack(trackKey);
+      } catch (err) {
+        console.warn('Lỗi khi bỏ thích bài hát:', err);
+      }
+    } else {
+      updated.add(trackKey);
+      setLikedTrackIds(updated);
+      try {
+        await UserLibraryApi.likeTrack(trackKey);
+      } catch (err) {
+        console.warn('Lỗi khi thích bài hát:', err);
+      }
+    }
+  };
 
   const playTrack = (track: Track, newPlaylist?: Track[]) => {
     setIsLoadingAudio(true);
@@ -207,6 +255,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         playNext,
         playPrev,
         playlist,
+        isLiked,
+        toggleLikeTrack,
       }}
     >
       {children}

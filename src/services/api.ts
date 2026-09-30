@@ -121,7 +121,82 @@ export const TrackApi = {
 
 export const PlaylistApi = {
   getMyPlaylists: async (): Promise<Playlist[]> => {
-    const res = await apiClient.get<Playlist[]>('/playlists/my');
+    const res = await apiClient.get<Playlist[]>('/playlists/me');
     return res.data;
+  },
+
+  getPlaylistById: async (id: string): Promise<Playlist> => {
+    const res = await apiClient.get<Playlist>(`/playlists/${id}`);
+    return res.data;
+  },
+
+  createPlaylist: async (payload: {
+    name: string;
+    description?: string;
+    coverUrl?: string;
+    isPublic?: boolean;
+  }): Promise<Playlist> => {
+    const res = await apiClient.post<Playlist>('/playlists', {
+      name: payload.name,
+      description: payload.description || '',
+      coverUrl: payload.coverUrl || null,
+      isPublic: payload.isPublic ?? true,
+    });
+    return res.data;
+  },
+
+  addTrackToPlaylist: async (playlistId: string, trackSpotifyId: string): Promise<Playlist> => {
+    const res = await apiClient.post<Playlist>(`/playlists/${playlistId}/tracks`, {
+      trackSpotifyId,
+    });
+    return res.data;
+  },
+
+  removeTrackFromPlaylist: async (playlistId: string, trackSpotifyId: string): Promise<Playlist> => {
+    const res = await apiClient.delete<Playlist>(`/playlists/${playlistId}/tracks/${trackSpotifyId}`);
+    return res.data;
+  },
+
+  deletePlaylist: async (playlistId: string): Promise<void> => {
+    await apiClient.delete(`/playlists/${playlistId}`);
+  },
+};
+
+export const UserLibraryApi = {
+  getLikedTracks: async (page = 0, size = 50): Promise<Track[]> => {
+    try {
+      const res = await apiClient.get<{ tracks: Track[] }>('/users/me/library/tracks', {
+        params: { page, size },
+      });
+      return res.data?.tracks || [];
+    } catch {
+      return [];
+    }
+  },
+
+  getLikedTrackIds: async (): Promise<string[]> => {
+    try {
+      const res = await apiClient.get<string[]>('/users/me/library/track-ids');
+      return res.data || [];
+    } catch {
+      return [];
+    }
+  },
+
+  likeTrack: async (trackSpotifyId: string): Promise<void> => {
+    await apiClient.post(`/users/me/library/tracks/${trackSpotifyId}`);
+  },
+
+  unlikeTrack: async (trackSpotifyId: string): Promise<void> => {
+    await apiClient.delete(`/users/me/library/tracks/${trackSpotifyId}`);
+  },
+
+  checkTrackLiked: async (trackSpotifyId: string): Promise<boolean> => {
+    try {
+      const res = await apiClient.get<{ exists: boolean }>(`/users/me/library/tracks/${trackSpotifyId}/exists`);
+      return !!res.data?.exists;
+    } catch {
+      return false;
+    }
   },
 };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -7,16 +7,60 @@ import {
   ScrollView,
   Switch,
   Alert,
+  Modal,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthApi } from '@/services/api';
 import { Storage } from '@/services/storage';
+import { UserProfile } from '@/types';
 
 export default function ProfileScreen() {
   const [dataSaver, setDataSaver] = useState(false);
   const [highQuality, setHighQuality] = useState(true);
   const [cacheSize, setCacheSize] = useState('48.6 MB');
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [loadingUser, setLoadingUser] = useState(false);
+
+  // Auth Modal State
+  const [authModalVisible, setAuthModalVisible] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authLoading, setAuthLoading] = useState(false);
+
+  // Form Fields
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('');
+  const [fullname, setFullname] = useState('');
+
+  const loadUserProfile = async () => {
+    setLoadingUser(true);
+    try {
+      const token = await Storage.getAccessToken();
+      if (token) {
+        const profile = await AuthApi.getProfile();
+        setUser(profile);
+      } else {
+        const stored = await Storage.getItem('moodify_user_info');
+        if (stored) {
+          setUser(JSON.parse(stored));
+        } else {
+          setUser(null);
+        }
+      }
+    } catch {
+      // Fallback
+      setUser(null);
+    } finally {
+      setLoadingUser(false);
+    }
+  };
+
+  useEffect(() => {
+    loadUserProfile();
+  }, []);
 
   const handleClearCache = () => {
     Alert.alert('Xác nhận', 'Bạn có muốn giải phóng bộ nhớ đệm âm thanh và hình ảnh?', [
@@ -40,11 +84,51 @@ export default function ProfileScreen() {
         style: 'destructive',
         onPress: async () => {
           await AuthApi.logout();
-          await Storage.clearTokens();
+          setUser(null);
           Alert.alert('Thông báo', 'Đã đăng xuất tài khoản an toàn.');
         },
       },
     ]);
+  };
+
+  const handleAuthSubmit = async () => {
+    if (!username.trim() || !password.trim()) {
+      Alert.alert('Lỗi', 'Vui lòng điền đầy đủ tài khoản và mật khẩu.');
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      if (authMode === 'login') {
+        const res = await AuthApi.login({
+          usernameOrEmail: username.trim(),
+          password: password.trim(),
+        });
+        setUser(res.user);
+        setAuthModalVisible(false);
+        Alert.alert('Thành công', `Chào mừng trở lại, ${res.user?.fullname || res.user?.username || 'bạn'}!`);
+      } else {
+        if (!email.trim() || !fullname.trim()) {
+          Alert.alert('Lỗi', 'Vui lòng nhập họ tên và email hợp lệ.');
+          setAuthLoading(false);
+          return;
+        }
+        const res = await AuthApi.register({
+          username: username.trim(),
+          password: password.trim(),
+          email: email.trim(),
+          fullname: fullname.trim(),
+        });
+        setUser(res.user);
+        setAuthModalVisible(false);
+        Alert.alert('Thành công', 'Đăng ký tài khoản thành công!');
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.message || 'Đăng nhập không thành công. Vui lòng kiểm tra lại thông tin.';
+      Alert.alert('Lỗi', msg);
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   return (
@@ -60,22 +144,48 @@ export default function ProfileScreen() {
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           {/* User Card */}
-          <View style={styles.userCard}>
-            <View style={styles.avatarLarge}>
-              <Text style={styles.avatarLargeText}>K</Text>
-            </View>
+          {user ? (
+            <View style={styles.userCard}>
+              <View style={styles.avatarLarge}>
+                <Text style={styles.avatarLargeText}>
+                  {(user.fullname || user.username || 'K').charAt(0).toUpperCase()}
+                </Text>
+              </View>
 
-            <View style={styles.userInfo}>
-              <View style={styles.nameRow}>
-                <Text style={styles.userName}>Khánh Duy</Text>
-                <View style={styles.vipBadge}>
-                  <Text style={styles.vipText}>PREMIUM</Text>
+              <View style={styles.userInfo}>
+                <View style={styles.nameRow}>
+                  <Text style={styles.userName} numberOfLines={1}>
+                    {user.fullname || user.username}
+                  </Text>
+                  <View style={styles.vipBadge}>
+                    <Text style={styles.vipText}>{user.role || 'PREMIUM'}</Text>
+                  </View>
+                </View>
+                <Text style={styles.userHandle}>@{user.username}</Text>
+                <Text style={styles.userEmail} numberOfLines={1}>{user.email}</Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.guestCard}>
+              <View style={styles.guestLeft}>
+                <View style={styles.avatarGuest}>
+                  <Ionicons name="person" size={26} color="#9ca3af" />
+                </View>
+                <View>
+                  <Text style={styles.guestTitle}>Khách vãng lai</Text>
+                  <Text style={styles.guestSubtitle}>Đăng nhập để đồng bộ thư viện và playlist</Text>
                 </View>
               </View>
-              <Text style={styles.userHandle}>@khanhduykl12</Text>
-              <Text style={styles.userRole}>Thành viên VIP • Moodify Gold</Text>
+
+              <TouchableOpacity
+                style={styles.loginModalBtn}
+                onPress={() => setAuthModalVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.loginModalBtnText}>Đăng nhập / Đăng ký</Text>
+              </TouchableOpacity>
             </View>
-          </View>
+          )}
 
           {/* Stats Row */}
           <View style={styles.statsRow}>
@@ -101,7 +211,7 @@ export default function ProfileScreen() {
             <View style={styles.menuItem}>
               <View style={styles.menuLeft}>
                 <Ionicons name="musical-notes-outline" size={20} color="#a78bfa" />
-                <Text style={styles.menuLabel}>Chất lượng âm thanh cao</Text>
+                <Text style={styles.menuLabel}>Chất lượng âm thanh cao (Lossless)</Text>
               </View>
               <Switch
                 value={highQuality}
@@ -157,14 +267,113 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* Logout Button */}
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
-            <Ionicons name="log-out-outline" size={20} color="#ef4444" style={{ marginRight: 8 }} />
-            <Text style={styles.logoutText}>Đăng xuất tài khoản</Text>
-          </TouchableOpacity>
+          {/* Logout Button if logged in */}
+          {user && (
+            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
+              <Ionicons name="log-out-outline" size={20} color="#ef4444" style={{ marginRight: 8 }} />
+              <Text style={styles.logoutText}>Đăng xuất tài khoản</Text>
+            </TouchableOpacity>
+          )}
 
           <View style={{ height: 110 }} />
         </ScrollView>
+
+        {/* Auth Modal (Login / Register) */}
+        <Modal
+          visible={authModalVisible}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={() => setAuthModalVisible(false)}
+        >
+          <View style={styles.authModalBackdrop}>
+            <View style={styles.authModalCard}>
+              {/* Tab Switcher */}
+              <View style={styles.authTabRow}>
+                <TouchableOpacity
+                  style={[styles.authTab, authMode === 'login' && styles.authTabActive]}
+                  onPress={() => setAuthMode('login')}
+                >
+                  <Text style={[styles.authTabText, authMode === 'login' && styles.authTabTextActive]}>
+                    Đăng nhập
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.authTab, authMode === 'register' && styles.authTabActive]}
+                  onPress={() => setAuthMode('register')}
+                >
+                  <Text style={[styles.authTabText, authMode === 'register' && styles.authTabTextActive]}>
+                    Đăng ký
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Form Inputs */}
+              {authMode === 'register' && (
+                <TextInput
+                  style={styles.authInput}
+                  placeholder="Họ và tên..."
+                  placeholderTextColor="#6b7280"
+                  value={fullname}
+                  onChangeText={setFullname}
+                />
+              )}
+
+              {authMode === 'register' && (
+                <TextInput
+                  style={styles.authInput}
+                  placeholder="Email..."
+                  placeholderTextColor="#6b7280"
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              )}
+
+              <TextInput
+                style={styles.authInput}
+                placeholder={authMode === 'login' ? 'Tên đăng nhập hoặc Email...' : 'Tên đăng nhập...'}
+                placeholderTextColor="#6b7280"
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+              />
+
+              <TextInput
+                style={styles.authInput}
+                placeholder="Mật khẩu..."
+                placeholderTextColor="#6b7280"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+              />
+
+              {/* Submit Buttons */}
+              <TouchableOpacity
+                style={styles.authSubmitBtn}
+                onPress={handleAuthSubmit}
+                disabled={authLoading}
+                activeOpacity={0.8}
+              >
+                {authLoading ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={styles.authSubmitText}>
+                    {authMode === 'login' ? 'Đăng nhập ngay' : 'Đăng ký tài khoản'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.authCloseBtn}
+                onPress={() => setAuthModalVisible(false)}
+              >
+                <Text style={styles.authCloseText}>Đóng</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </View>
   );
@@ -248,28 +457,70 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   userHandle: {
-    color: '#9ca3af',
+    color: '#a78bfa',
     fontSize: 13,
+    fontWeight: '600',
     marginTop: 2,
   },
-  userRole: {
-    color: '#a78bfa',
+  userEmail: {
+    color: '#9ca3af',
     fontSize: 12,
-    fontWeight: '600',
-    marginTop: 4,
+    marginTop: 2,
+  },
+  guestCard: {
+    backgroundColor: '#161622',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#262638',
+  },
+  guestLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  avatarGuest: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#26263a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  guestTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  guestSubtitle: {
+    color: '#9ca3af',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  loginModalBtn: {
+    backgroundColor: '#8b5cf6',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  loginModalBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
   },
   statsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
     backgroundColor: '#161622',
     paddingVertical: 14,
     borderRadius: 12,
-    marginBottom: 24,
+    marginBottom: 20,
     borderWidth: 1,
     borderColor: '#262638',
   },
   statBox: {
+    flex: 1,
     alignItems: 'center',
   },
   statNumber: {
@@ -284,12 +535,11 @@ const styles = StyleSheet.create({
   },
   statDivider: {
     width: 1,
-    height: 24,
     backgroundColor: '#262638',
   },
   sectionTitle: {
     color: '#9ca3af',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1,
     marginBottom: 8,
@@ -297,19 +547,20 @@ const styles = StyleSheet.create({
   },
   menuGroup: {
     backgroundColor: '#161622',
-    borderRadius: 12,
-    paddingHorizontal: 14,
+    borderRadius: 14,
     marginBottom: 20,
     borderWidth: 1,
     borderColor: '#262638',
+    overflow: 'hidden',
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 16,
     paddingVertical: 14,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#262638',
+    borderBottomWidth: 1,
+    borderBottomColor: '#20202e',
   },
   menuLeft: {
     flexDirection: 'row',
@@ -324,6 +575,7 @@ const styles = StyleSheet.create({
   menuValue: {
     color: '#9ca3af',
     fontSize: 13,
+    fontWeight: '500',
   },
   cacheText: {
     color: '#f87171',
@@ -334,16 +586,91 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderColor: '#ef4444',
     paddingVertical: 14,
     borderRadius: 12,
-    marginTop: 10,
+    marginTop: 6,
   },
   logoutText: {
-    color: '#f87171',
+    color: '#ef4444',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  // Auth Modal
+  authModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  authModalCard: {
+    width: '100%',
+    backgroundColor: '#161622',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#383854',
+  },
+  authTabRow: {
+    flexDirection: 'row',
+    backgroundColor: '#0f0f17',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 18,
+  },
+  authTab: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  authTabActive: {
+    backgroundColor: '#8b5cf6',
+  },
+  authTabText: {
+    color: '#9ca3af',
     fontWeight: '700',
+    fontSize: 14,
+  },
+  authTabTextActive: {
+    color: '#ffffff',
+    fontWeight: '800',
+  },
+  authInput: {
+    backgroundColor: '#0c0c12',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#ffffff',
+    fontSize: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2e2e42',
+  },
+  authSubmitBtn: {
+    backgroundColor: '#8b5cf6',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  authSubmitText: {
+    color: '#ffffff',
     fontSize: 15,
+    fontWeight: '800',
+  },
+  authCloseBtn: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  authCloseText: {
+    color: '#9ca3af',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

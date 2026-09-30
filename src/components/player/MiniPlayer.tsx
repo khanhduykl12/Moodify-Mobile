@@ -12,10 +12,14 @@ export const MiniPlayer: React.FC = () => {
     currentTime,
     duration,
     openPlayerModal,
+    isLiked,
+    toggleLikeTrack,
   } = usePlayer();
-  const [isLiked, setIsLiked] = useState(false);
 
   if (!currentTrack) return null;
+
+  const trackKey = currentTrack.spotifyId || currentTrack.id;
+  const liked = isLiked(trackKey);
 
   const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : (isPlaying ? 30 : 0);
 
@@ -45,14 +49,14 @@ export const MiniPlayer: React.FC = () => {
         {/* Action Buttons */}
         <View style={styles.actions}>
           <TouchableOpacity
-            onPress={() => setIsLiked(!isLiked)}
+            onPress={() => toggleLikeTrack(currentTrack)}
             style={styles.actionBtn}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Ionicons
-              name={isLiked ? 'heart' : 'heart-outline'}
+              name={liked ? 'heart' : 'heart-outline'}
               size={22}
-              color={isLiked ? '#ec4899' : '#9ca3af'}
+              color={liked ? '#ec4899' : '#9ca3af'}
             />
           </TouchableOpacity>
 
