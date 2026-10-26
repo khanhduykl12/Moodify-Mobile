@@ -9,11 +9,6 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0a0a0f",
     "primaryColor": "#8b5cf6",
-    "splash": {
-      "image": "./assets/images/moodify-logo.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0a0a0f"
-    },
     "ios": {
       "icon": "./assets/images/moodify-icon.png"
     },
@@ -24,7 +19,14 @@
         "backgroundImage": "./assets/images/moodify-icon.png"
       },
       "backgroundColor": "#0a0a0f",
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ],
+      "package": "com.khanhduykl12steam.moodify"
     },
     "web": {
       "output": "static",
@@ -41,11 +43,21 @@
         }
       ],
       "expo-secure-store",
-      "expo-audio"
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "82c4edc1-dcf4-4a40-98c5-3699f85b24d4"
+      }
     }
   }
 }
