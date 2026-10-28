@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthApi } from '@/services/api';
 import { Storage } from '@/services/storage';
+import { API_BASE_URL } from '@/constants/config';
 import { UserProfile } from '@/types';
 
 export default function ProfileScreen() {
@@ -264,6 +265,16 @@ export default function ProfileScreen() {
                 <Text style={styles.menuLabel}>Đồ án Khoá Luận Tốt Nghiệp</Text>
               </View>
               <Text style={styles.menuValue}>ĐH Công Thương TP.HCM</Text>
+            </View>
+
+            <View style={styles.menuItem}>
+              <View style={styles.menuLeft}>
+                <Ionicons name="server-outline" size={20} color="#10b981" />
+                <Text style={styles.menuLabel}>Máy chủ Backend API</Text>
+              </View>
+              <Text style={[styles.menuValue, { color: '#34d399' }]} numberOfLines={1}>
+                {API_BASE_URL.replace('http://', '')}
+              </Text>
             </View>
           </View>
 

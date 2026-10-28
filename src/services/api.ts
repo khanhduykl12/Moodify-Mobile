@@ -117,6 +117,24 @@ export const TrackApi = {
     });
     return res.data;
   },
+
+  getTracksByMood: async (moodQuery: string, size = 20): Promise<Track[]> => {
+    try {
+      const res = await apiClient.get<TrackPageResponse>('/tracks', {
+        params: { mode: 'mood', query: moodQuery, size },
+      });
+      return res.data?.content || [];
+    } catch {
+      return [];
+    }
+  },
+
+  getTracksByGenre: async (genre: string, page = 0, size = 20): Promise<TrackPageResponse> => {
+    const res = await apiClient.get<TrackPageResponse>('/tracks', {
+      params: { genre, page, size },
+    });
+    return res.data;
+  },
 };
 
 export const PlaylistApi = {

@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { PlaylistApi, TrackApi, UserLibraryApi } from '@/services/api';
 import { Playlist, Track } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
+import { TrackActionModal } from '@/components/player/TrackActionModal';
 
 const DEFAULT_PLAYLISTS: Playlist[] = [
   {
@@ -68,6 +69,7 @@ export default function LibraryScreen() {
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
   const [playlistTracks, setPlaylistTracks] = useState<Track[]>([]);
   const [loadingTracks, setLoadingTracks] = useState(false);
+  const [actionTrack, setActionTrack] = useState<Track | null>(null);
 
   const fetchPlaylists = () => {
     PlaylistApi.getMyPlaylists()
@@ -434,6 +436,14 @@ export default function LibraryScreen() {
                           <Text style={styles.detailTrackDuration}>
                             {formatDuration(item.durationMs)}
                           </Text>
+
+                          <TouchableOpacity
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            style={{ paddingLeft: 10 }}
+                            onPress={() => setActionTrack(item)}
+                          >
+                            <Ionicons name="ellipsis-vertical" size={16} color="#9ca3af" />
+                          </TouchableOpacity>
                         </TouchableOpacity>
                       );
                     }}
@@ -443,6 +453,13 @@ export default function LibraryScreen() {
             </View>
           )}
         </Modal>
+
+        {/* Track Action Modal */}
+        <TrackActionModal
+          visible={!!actionTrack}
+          track={actionTrack}
+          onClose={() => setActionTrack(null)}
+        />
       </SafeAreaView>
     </View>
   );

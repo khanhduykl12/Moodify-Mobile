@@ -18,7 +18,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [2/2] Bat dau qua trinh build APK tren Cloud...
-call npx eas-cli build -p android --profile preview
+call npx eas-cli build -p android --profile preview --clear-cache
 
 echo.
 echo Build hoan tat! Kiem tra link hoac ma QR tren man hinh de tai APK ve may.

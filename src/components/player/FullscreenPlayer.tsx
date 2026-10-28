@@ -10,6 +10,7 @@ import {
   ScrollView,
   Alert,
   FlatList,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -76,6 +77,18 @@ export const FullscreenPlayer: React.FC = () => {
   const trackKey = currentTrack.spotifyId || currentTrack.id;
   const liked = isLiked(trackKey);
 
+  const handleShare = async () => {
+    if (!currentTrack) return;
+    try {
+      await Share.share({
+        message: `🎵 Đang nghe "${currentTrack.name}" của ${currentTrack.artistName} trên Moodify! Cùng thưởng thức nào: http://localhost:3000/track/${currentTrack.id || currentTrack.spotifyId}`,
+        title: currentTrack.name,
+      });
+    } catch (err) {
+      console.warn('Lỗi chia sẻ:', err);
+    }
+  };
+
   const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
 
   const handleProgressBarPress = (event: any) => {
@@ -118,9 +131,14 @@ export const FullscreenPlayer: React.FC = () => {
               </Text>
             </View>
 
-            <TouchableOpacity style={styles.headerBtn} onPress={() => setShowPlaylistPicker(true)}>
-              <Ionicons name="bookmark-outline" size={24} color="#ffffff" />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <TouchableOpacity style={[styles.headerBtn, { marginRight: 6 }]} onPress={handleShare}>
+                <Ionicons name="share-social-outline" size={22} color="#ffffff" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.headerBtn} onPress={() => setShowPlaylistPicker(true)}>
+                <Ionicons name="bookmark-outline" size={24} color="#ffffff" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>

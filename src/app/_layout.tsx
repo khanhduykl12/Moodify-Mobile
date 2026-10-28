@@ -36,7 +36,7 @@ export default function RootLayout() {
             options={{
               title: 'Trang chủ',
               tabBarIcon: ({ color, focused }) => (
-                <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
+                <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color as string} />
               ),
             }}
           />
@@ -45,7 +45,7 @@ export default function RootLayout() {
             options={{
               title: 'Tìm kiếm',
               tabBarIcon: ({ color, focused }) => (
-                <Ionicons name={focused ? 'search' : 'search-outline'} size={22} color={color} />
+                <Ionicons name={focused ? 'search' : 'search-outline'} size={22} color={color as string} />
               ),
             }}
           />
@@ -54,7 +54,7 @@ export default function RootLayout() {
             options={{
               title: 'Thư viện',
               tabBarIcon: ({ color, focused }) => (
-                <Ionicons name={focused ? 'library' : 'library-outline'} size={22} color={color} />
+                <Ionicons name={focused ? 'library' : 'library-outline'} size={22} color={color as string} />
               ),
             }}
           />
@@ -63,7 +63,7 @@ export default function RootLayout() {
             options={{
               title: 'Tài khoản',
               tabBarIcon: ({ color, focused }) => (
-                <Ionicons name={focused ? 'person' : 'person-outline'} size={22} color={color} />
+                <Ionicons name={focused ? 'person' : 'person-outline'} size={22} color={color as string} />
               ),
             }}
           />

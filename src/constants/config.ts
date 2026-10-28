@@ -1,12 +1,16 @@
 /**
  * Cấu hình Network & API Endpoint cho Moodify Mobile
  */
+import Constants from 'expo-constants';
 
-// IP máy tính trong mạng Wi-Fi hiện tại (Nha Tro 10 LTT 2)
-export const CURRENT_LAN_IP = '10.0.0.131';
+// Tự động nhận diện IP máy tính dev đang chạy Expo qua Wi-Fi hiện tại
+const debuggerHost = Constants.expoConfig?.hostUri;
+const detectedIp = debuggerHost ? debuggerHost.split(':')[0] : '10.0.0.131';
+
+export const CURRENT_LAN_IP = detectedIp || '10.0.0.131';
 export const DEV_PORT = '8080';
 
-// API Base URL gọi trực tiếp qua Wi-Fi phòng trọ (Siêu nhanh, không cần tunnel)
+// API Base URL gọi trực tiếp qua Wi-Fi (Tự thích ứng theo IP mạng kết nối)
 export const API_BASE_URL = `http://${CURRENT_LAN_IP}:${DEV_PORT}/api`;
 
 export const STORAGE_KEYS = {

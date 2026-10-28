@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { TrackApi } from '@/services/api';
 import { Track } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
+import { TrackActionModal } from '@/components/player/TrackActionModal';
 
 const { width } = Dimensions.get('window');
 
@@ -43,6 +44,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [allTracks, setAllTracks] = useState<Track[]>([]);
+  const [actionTrack, setActionTrack] = useState<Track | null>(null);
 
   // Tải danh sách bài hát từ Backend
   const loadData = async () => {
@@ -66,9 +68,13 @@ export default function HomeScreen() {
     loadData();
   };
 
-  // Lọc bài hát theo thể loại
+  // Lọc bài hát theo thể loại hoặc nghệ sĩ
   const filteredTracks = useMemo(() => {
     if (selectedFilter === 'all') return allTracks;
+    if (selectedFilter.startsWith('artist_')) {
+      const targetArtist = selectedFilter.replace('artist_', '').toLowerCase();
+      return allTracks.filter((t) => t.artistName?.toLowerCase() === targetArtist);
+    }
     return allTracks.filter((t) => {
       const genres = (t.genres || []).map((g) => g.toLowerCase());
       if (selectedFilter === 'vpop') return genres.some((g) => g.includes('pop') || g.includes('viet'));
@@ -340,7 +346,11 @@ export default function HomeScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalList}
               renderItem={({ item }) => (
-                <TouchableOpacity style={styles.artistCard} activeOpacity={0.8}>
+                <TouchableOpacity
+                  style={styles.artistCard}
+                  activeOpacity={0.8}
+                  onPress={() => setSelectedFilter('artist_' + item.name)}
+                >
                   <View style={styles.artistAvatarWrapper}>
                     {item.image ? (
                       <Image source={{ uri: item.image }} style={styles.artistAvatar} />
@@ -395,7 +405,11 @@ export default function HomeScreen() {
                       </Text>
                     </View>
 
-                    <TouchableOpacity style={styles.rankMoreBtn}>
+                    <TouchableOpacity
+                      style={styles.rankMoreBtn}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      onPress={() => setActionTrack(t)}
+                    >
                       <Ionicons name="ellipsis-vertical" size={18} color="#6b7280" />
                     </TouchableOpacity>
                   </TouchableOpacity>
@@ -406,6 +420,12 @@ export default function HomeScreen() {
             <View style={{ height: 110 }} />
           </ScrollView>
         )}
+        {/* Track Action Modal */}
+        <TrackActionModal
+          visible={!!actionTrack}
+          track={actionTrack}
+          onClose={() => setActionTrack(null)}
+        />
       </SafeAreaView>
     </View>
   );

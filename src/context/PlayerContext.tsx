@@ -263,15 +263,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       {/* Bộ máy phát âm thanh siêu ổn định chạy ngầm */}
       <View style={styles.hiddenAudioContainer} pointerEvents="none">
-        <WebView
-          ref={webViewRef}
-          source={{ html: AUDIO_HTML }}
-          originWhitelist={['*']}
-          mediaPlaybackRequiresUserAction={false}
-          allowsInlineMediaPlayback={true}
-          javaScriptEnabled={true}
-          onMessage={handleMessage}
-        />
+        {React.createElement(WebView as any, {
+          ref: webViewRef,
+          source: { html: AUDIO_HTML },
+          originWhitelist: ['*'],
+          mediaPlaybackRequiresUserAction: false,
+          allowsInlineMediaPlayback: true,
+          javaScriptEnabled: true,
+          onMessage: handleMessage,
+        })}
       </View>
     </PlayerContext.Provider>
   );
