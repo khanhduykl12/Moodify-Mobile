@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -27,6 +27,69 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 }
 
+export interface LyricLine {
+  id: number;
+  time: number;
+  endTime: number;
+  text: string;
+}
+
+export function parseLyrics(lyricsRaw: string | null | undefined, totalDurationSeconds: number): LyricLine[] {
+  if (!lyricsRaw || !lyricsRaw.trim()) return [];
+
+  const rawLines = lyricsRaw
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  if (rawLines.length === 0) return [];
+
+  const lrcRegex = /^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)$/;
+  const hasLrc = rawLines.some((l) => lrcRegex.test(l));
+
+  if (hasLrc) {
+    const parsed: LyricLine[] = [];
+    let idCounter = 0;
+    for (const raw of rawLines) {
+      if (/^\[(ti|ar|al|by|offset|length):/i.test(raw)) continue;
+      const match = raw.match(lrcRegex);
+      if (match) {
+        const mins = parseInt(match[1], 10);
+        const secs = parseInt(match[2], 10);
+        const ms = match[3] ? parseFloat('0.' + match[3]) : 0;
+        const time = mins * 60 + secs + ms;
+        const text = match[4].trim();
+        if (text) {
+          parsed.push({
+            id: idCounter++,
+            time: Math.round(time * 100) / 100,
+            endTime: Math.round((time + 3.5) * 100) / 100,
+            text,
+          });
+        }
+      }
+    }
+    for (let i = 0; i < parsed.length - 1; i++) {
+      parsed[i].endTime = parsed[i + 1].time;
+    }
+    if (parsed.length > 0) return parsed;
+  }
+
+  // Plain multiline lyrics: distribute smoothly across duration
+  const total = totalDurationSeconds > 10 ? totalDurationSeconds : 210;
+  const introDuration = Math.min(8, Math.max(3, total * 0.04));
+  const outroDuration = Math.min(10, Math.max(3, total * 0.04));
+  const singableDuration = Math.max(10, total - introDuration - outroDuration);
+
+  const step = singableDuration / rawLines.length;
+  return rawLines.map((line, idx) => ({
+    id: idx,
+    time: Math.round((introDuration + idx * step) * 100) / 100,
+    endTime: Math.round((introDuration + (idx + 1) * step) * 100) / 100,
+    text: line,
+  }));
+}
+
 export const FullscreenPlayer: React.FC = () => {
   const {
     currentTrack,
@@ -41,14 +104,20 @@ export const FullscreenPlayer: React.FC = () => {
     playPrev,
     isLiked,
     toggleLikeTrack,
+    isShuffle,
+    isRepeat,
+    toggleShuffle,
+    toggleRepeat,
+    volume,
+    setVolume,
   } = usePlayer();
 
-  const [isShuffle, setIsShuffle] = useState(false);
-  const [isRepeat, setIsRepeat] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loadingPlaylists, setLoadingPlaylists] = useState(false);
+
+  const lyricsScrollRef = useRef<any>(null);
 
   useEffect(() => {
     if (showPlaylistPicker) {
@@ -59,6 +128,26 @@ export const FullscreenPlayer: React.FC = () => {
         .finally(() => setLoadingPlaylists(false));
     }
   }, [showPlaylistPicker]);
+
+  const parsedLyrics = useMemo(() => {
+    if (!currentTrack) return [];
+    const raw = currentTrack.lyricsSynced || currentTrack.lyricsPlain;
+    return parseLyrics(raw, duration);
+  }, [currentTrack, duration]);
+
+  const activeLyricIndex = useMemo(() => {
+    return parsedLyrics.findIndex((l) => currentTime >= l.time && currentTime < l.endTime);
+  }, [parsedLyrics, currentTime]);
+
+  // Tự động cuộn đến câu hát đang phát
+  useEffect(() => {
+    if (showLyrics && activeLyricIndex >= 0 && lyricsScrollRef.current) {
+      lyricsScrollRef.current.scrollTo({
+        y: Math.max(0, activeLyricIndex * 42 - 120),
+        animated: true,
+      });
+    }
+  }, [activeLyricIndex, showLyrics]);
 
   const handleAddToPlaylist = async (pl: Playlist) => {
     if (!currentTrack) return;
@@ -192,20 +281,26 @@ export const FullscreenPlayer: React.FC = () => {
               </View>
             </View>
 
-            {/* Player Controls */}
+            {/* Player Controls (Shuffle, Prev, Play/Pause, Next, Repeat) */}
             <View style={styles.controlsRow}>
               <TouchableOpacity
-                onPress={() => setIsShuffle(!isShuffle)}
+                onPress={toggleShuffle}
                 style={styles.controlIconBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Ionicons
                   name="shuffle"
                   size={24}
                   color={isShuffle ? '#a78bfa' : '#6b7280'}
                 />
+                {isShuffle && <View style={styles.activeDot} />}
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={playPrev} style={styles.controlIconBtn}>
+              <TouchableOpacity
+                onPress={playPrev}
+                style={styles.controlIconBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
                 <Ionicons name="play-skip-back" size={32} color="#ffffff" />
               </TouchableOpacity>
 
@@ -222,42 +317,107 @@ export const FullscreenPlayer: React.FC = () => {
                 />
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={playNext} style={styles.controlIconBtn}>
+              <TouchableOpacity
+                onPress={playNext}
+                style={styles.controlIconBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
                 <Ionicons name="play-skip-forward" size={32} color="#ffffff" />
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={() => setIsRepeat(!isRepeat)}
+                onPress={toggleRepeat}
                 style={styles.controlIconBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Ionicons
                   name="repeat"
                   size={24}
                   color={isRepeat ? '#a78bfa' : '#6b7280'}
                 />
+                {isRepeat && <View style={styles.activeDot} />}
               </TouchableOpacity>
             </View>
 
-            {/* Synced Lyrics Preview Drawer */}
-            {(currentTrack.lyricsPlain || currentTrack.lyricsSynced) && (
-              <View style={styles.lyricsCard}>
-                <View style={styles.lyricsHeader}>
-                  <Text style={styles.lyricsTitle}>Lời bài hát</Text>
-                  <TouchableOpacity onPress={() => setShowLyrics(!showLyrics)}>
-                    <Text style={styles.lyricsToggleText}>
-                      {showLyrics ? 'Thu gọn' : 'Xem toàn bộ'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                <Text
-                  style={styles.lyricsContent}
-                  numberOfLines={showLyrics ? undefined : 4}
-                >
-                  {currentTrack.lyricsPlain ||
-                    (currentTrack.lyricsSynced || '').replace(/\[\d{2}:\d{2}\.\d{2}\]/g, '')}
-                </Text>
+            {/* Volume Control Quick Slider */}
+            <View style={styles.volumeRow}>
+              <TouchableOpacity
+                onPress={() => setVolume(volume > 0 ? 0 : 1)}
+                style={{ padding: 4 }}
+              >
+                <Ionicons
+                  name={volume === 0 ? 'volume-mute' : volume < 0.5 ? 'volume-low' : 'volume-high'}
+                  size={20}
+                  color="#9ca3af"
+                />
+              </TouchableOpacity>
+              <View style={styles.volumeBarBg}>
+                <View style={[styles.volumeBarFill, { width: `${volume * 100}%` }]} />
               </View>
-            )}
+              <Text style={styles.volumeText}>{Math.round(volume * 100)}%</Text>
+            </View>
+
+            {/* Realtime Synced Lyrics (Karaoke Style) */}
+            <View style={styles.lyricsCard}>
+              <View style={styles.lyricsHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Ionicons name="mic" size={18} color="#a78bfa" style={{ marginRight: 6 }} />
+                  <Text style={styles.lyricsTitle}>Lời bài hát thời gian thực</Text>
+                </View>
+                <TouchableOpacity onPress={() => setShowLyrics(!showLyrics)}>
+                  <Text style={styles.lyricsToggleText}>
+                    {showLyrics ? 'Thu gọn' : 'Xem toàn bộ'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {parsedLyrics.length > 0 ? (
+                showLyrics ? (
+                  <ScrollView
+                    ref={lyricsScrollRef}
+                    style={styles.fullLyricsScroll}
+                    showsVerticalScrollIndicator={false}
+                    nestedScrollEnabled={true}
+                  >
+                    {parsedLyrics.map((line, idx) => {
+                      const isActive = idx === activeLyricIndex;
+                      return (
+                        <TouchableOpacity
+                          key={line.id}
+                          onPress={() => seekTo(line.time)}
+                          style={[styles.lyricLineBox, isActive && styles.lyricLineBoxActive]}
+                        >
+                          <Text style={[styles.lyricLineText, isActive && styles.lyricLineTextActive]}>
+                            {line.text}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => setShowLyrics(true)}
+                    activeOpacity={0.8}
+                    style={{ paddingVertical: 4 }}
+                  >
+                    <Text style={styles.lyricsPreviewActive}>
+                      {activeLyricIndex >= 0
+                        ? parsedLyrics[activeLyricIndex].text
+                        : parsedLyrics[0]?.text || 'Giai điệu đang vang lên...'}
+                    </Text>
+                    {parsedLyrics[activeLyricIndex + 1] && (
+                      <Text style={styles.lyricsPreviewNext}>
+                        {parsedLyrics[activeLyricIndex + 1].text}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                )
+              ) : (
+                <Text style={styles.lyricsEmptyText}>
+                  🎵 Giai điệu đang vang lên... Lời bài hát sẽ sớm được cập nhật.
+                </Text>
+              )}
+            </View>
           </ScrollView>
 
           {/* Playlist Picker Sheet Modal */}
@@ -283,27 +443,34 @@ export const FullscreenPlayer: React.FC = () => {
                   <FlatList
                     data={playlists}
                     keyExtractor={(item) => item.id}
-                    style={{ maxHeight: 260 }}
+                    style={styles.pickerList}
                     renderItem={({ item }) => (
                       <TouchableOpacity
-                        style={styles.sheetPlaylistItem}
+                        style={styles.pickerItem}
                         onPress={() => handleAddToPlaylist(item)}
                       >
-                        <Ionicons name="musical-notes" size={20} color="#a78bfa" />
-                        <Text style={styles.sheetPlaylistName} numberOfLines={1}>
-                          {item.name}
-                        </Text>
-                        <Ionicons name="add" size={20} color="#9ca3af" />
+                        <View style={styles.pickerItemIcon}>
+                          <Ionicons name="musical-notes" size={20} color="#8b5cf6" />
+                        </View>
+                        <View style={styles.pickerItemInfo}>
+                          <Text style={styles.pickerItemName} numberOfLines={1}>
+                            {item.name}
+                          </Text>
+                          <Text style={styles.pickerItemMeta}>
+                            {item.trackCount || 0} bài hát
+                          </Text>
+                        </View>
+                        <Ionicons name="add-circle" size={22} color="#a78bfa" />
                       </TouchableOpacity>
                     )}
                   />
                 )}
 
                 <TouchableOpacity
-                  style={styles.sheetCloseBtn}
+                  style={styles.closeSheetBtn}
                   onPress={() => setShowPlaylistPicker(false)}
                 >
-                  <Text style={styles.sheetCloseText}>Đóng</Text>
+                  <Text style={styles.closeSheetText}>Hủy bỏ</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -318,7 +485,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0c0c10',
-    position: 'relative',
   },
   bgImage: {
     position: 'absolute',
@@ -326,8 +492,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    width: '100%',
-    height: '100%',
     opacity: 0.35,
   },
   bgOverlay: {
@@ -336,7 +500,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(12, 12, 16, 0.85)',
+    backgroundColor: 'rgba(12, 12, 16, 0.75)',
   },
   safeArea: {
     flex: 1,
@@ -345,8 +509,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
   },
   headerBtn: {
     padding: 6,
@@ -354,53 +519,49 @@ const styles = StyleSheet.create({
   headerTitleBox: {
     alignItems: 'center',
     flex: 1,
+    marginHorizontal: 12,
   },
   headerSuperTitle: {
-    color: '#9ca3af',
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    color: '#9ca3af',
+    letterSpacing: 1,
+    marginBottom: 2,
   },
   headerSubTitle: {
-    color: '#ffffff',
     fontSize: 13,
     fontWeight: '700',
-    marginTop: 2,
+    color: '#ffffff',
   },
   content: {
     paddingHorizontal: 24,
     paddingBottom: 40,
-    alignItems: 'center',
   },
   artworkContainer: {
-    width: width - 48,
-    height: width - 48,
-    maxHeight: 330,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginVertical: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.6,
-    shadowRadius: 16,
-    elevation: 12,
-    backgroundColor: '#1f1f2e',
+    alignItems: 'center',
+    marginVertical: 20,
   },
   artwork: {
-    width: '100%',
-    height: '100%',
+    width: width - 80,
+    height: width - 80,
+    borderRadius: 16,
+    shadowColor: '#8b5cf6',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
   },
   artworkPlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: width - 80,
+    height: width - 80,
+    borderRadius: 16,
     backgroundColor: '#1f1f2e',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   trackInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    width: '100%',
     marginBottom: 20,
   },
   trackTitleBox: {
@@ -408,173 +569,250 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   trackTitle: {
+    fontSize: 20,
+    fontWeight: '800',
     color: '#ffffff',
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: 0.3,
+    marginBottom: 4,
   },
   trackArtist: {
-    color: '#9ca3af',
     fontSize: 15,
-    marginTop: 4,
-    fontWeight: '600',
+    color: '#9ca3af',
   },
   likeBtn: {
-    padding: 6,
+    padding: 8,
   },
   progressContainer: {
-    width: '100%',
-    marginBottom: 24,
+    marginBottom: 16,
   },
   progressBarTouch: {
     paddingVertical: 10,
   },
   progressBarBg: {
     height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: '#374151',
     borderRadius: 2,
     position: 'relative',
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#8b5cf6',
     borderRadius: 2,
   },
   progressThumb: {
-    position: 'absolute',
-    top: -4,
     width: 12,
     height: 12,
     borderRadius: 6,
     backgroundColor: '#ffffff',
+    position: 'absolute',
+    top: -4,
     marginLeft: -6,
   },
   timeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 2,
+    marginTop: 4,
   },
   timeText: {
-    color: '#6b7280',
     fontSize: 12,
+    color: '#9ca3af',
     fontWeight: '600',
   },
   controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: 30,
+    marginBottom: 16,
+    paddingHorizontal: 8,
   },
   controlIconBtn: {
-    padding: 8,
+    padding: 10,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  activeDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#a78bfa',
+    position: 'absolute',
+    bottom: 2,
   },
   mainPlayBtn: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#ffffff',
-    justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
+    justifyContent: 'center',
+    shadowColor: '#ffffff',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowRadius: 10,
+  },
+  volumeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 8,
+    gap: 12,
+  },
+  volumeBarBg: {
+    flex: 1,
+    height: 4,
+    backgroundColor: '#262636',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  volumeBarFill: {
+    height: '100%',
+    backgroundColor: '#a78bfa',
+    borderRadius: 2,
+  },
+  volumeText: {
+    fontSize: 11,
+    color: '#6b7280',
+    fontWeight: '600',
+    width: 32,
+    textAlign: 'right',
   },
   lyricsCard: {
-    width: '100%',
-    backgroundColor: '#1f1f2e',
+    backgroundColor: 'rgba(30, 27, 75, 0.45)',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#383854',
-    marginBottom: 20,
+    borderColor: 'rgba(139, 92, 246, 0.25)',
   },
   lyricsHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 12,
   },
   lyricsTitle: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#c4b5fd',
   },
   lyricsToggleText: {
+    fontSize: 12,
     color: '#a78bfa',
-    fontSize: 13,
     fontWeight: '700',
   },
-  lyricsContent: {
-    color: '#d1d5db',
-    fontSize: 14,
-    lineHeight: 24,
-    fontWeight: '500',
+  fullLyricsScroll: {
+    maxHeight: 260,
+  },
+  lyricLineBox: {
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  lyricLineBoxActive: {
+    backgroundColor: 'rgba(124, 58, 237, 0.25)',
+  },
+  lyricLineText: {
+    fontSize: 15,
+    color: '#9ca3af',
+    fontWeight: '600',
+    lineHeight: 22,
+  },
+  lyricLineTextActive: {
+    color: '#ffffff',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  lyricsPreviewActive: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#ffffff',
+    marginBottom: 4,
+    lineHeight: 22,
+  },
+  lyricsPreviewNext: {
+    fontSize: 13,
+    color: '#6b7280',
+    fontWeight: '600',
+  },
+  lyricsEmptyText: {
+    fontSize: 13,
+    color: '#9ca3af',
+    fontStyle: 'italic',
   },
   sheetOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
   },
   sheetCard: {
-    width: '100%',
-    backgroundColor: '#161622',
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#2e2e42',
+    backgroundColor: '#181824',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 24,
+    maxHeight: height * 0.6,
   },
   sheetTitle: {
-    color: '#ffffff',
     fontSize: 18,
     fontWeight: '800',
-    marginBottom: 6,
+    color: '#ffffff',
+    marginBottom: 4,
   },
   sheetSubtitle: {
-    color: '#9ca3af',
     fontSize: 13,
+    color: '#9ca3af',
     marginBottom: 16,
   },
   emptyPlaylistNotice: {
-    paddingVertical: 24,
+    paddingVertical: 32,
     alignItems: 'center',
   },
   emptyNoticeText: {
+    fontSize: 14,
     color: '#ffffff',
-    fontSize: 15,
     fontWeight: '600',
+    marginBottom: 4,
   },
   emptyNoticeSub: {
-    color: '#6b7280',
-    fontSize: 13,
-    marginTop: 4,
+    fontSize: 12,
+    color: '#9ca3af',
   },
-  sheetPlaylistItem: {
+  pickerList: {
+    marginBottom: 16,
+  },
+  pickerItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#232336',
+    borderBottomColor: '#262636',
   },
-  sheetPlaylistName: {
+  pickerItemIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: '#262636',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  pickerItemInfo: {
     flex: 1,
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
-    marginLeft: 12,
   },
-  sheetCloseBtn: {
-    marginTop: 16,
+  pickerItemName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 2,
+  },
+  pickerItemMeta: {
+    fontSize: 12,
+    color: '#9ca3af',
+  },
+  closeSheetBtn: {
     paddingVertical: 12,
-    backgroundColor: '#26263a',
-    borderRadius: 12,
+    backgroundColor: '#262636',
+    borderRadius: 8,
     alignItems: 'center',
   },
-  sheetCloseText: {
+  closeSheetText: {
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',

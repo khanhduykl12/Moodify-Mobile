@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { PlaylistApi, TrackApi, UserLibraryApi } from '@/services/api';
 import { Playlist, Track } from '@/types';
@@ -81,9 +82,29 @@ export default function LibraryScreen() {
       .catch(() => {});
   };
 
-  useEffect(() => {
-    fetchPlaylists();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchPlaylists();
+    }, [])
+  );
+
+  const handleRemoveTrackFromPlaylist = (track: Track) => {
+    if (!selectedPlaylist) return;
+    const trackKey = track.spotifyId || track.id;
+    Alert.alert('Xóa bài hát', `Bạn có muốn gỡ "${track.name}" khỏi playlist này?`, [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Gỡ bài hát',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await PlaylistApi.removeTrackFromPlaylist(selectedPlaylist.id, trackKey);
+          } catch {}
+          setPlaylistTracks((prev) => prev.filter((t) => (t.spotifyId || t.id) !== trackKey));
+        },
+      },
+    ]);
+  };
 
   const handleCreatePlaylist = async () => {
     if (!newTitle.trim()) {
@@ -444,6 +465,16 @@ export default function LibraryScreen() {
                           >
                             <Ionicons name="ellipsis-vertical" size={16} color="#9ca3af" />
                           </TouchableOpacity>
+
+                          {selectedPlaylist?.id !== 'fav' && !selectedPlaylist?.id.startsWith('p') && (
+                            <TouchableOpacity
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              style={{ paddingLeft: 10 }}
+                              onPress={() => handleRemoveTrackFromPlaylist(item)}
+                            >
+                              <Ionicons name="close-circle-outline" size={18} color="#ef4444" />
+                            </TouchableOpacity>
+                          )}
                         </TouchableOpacity>
                       );
                     }}

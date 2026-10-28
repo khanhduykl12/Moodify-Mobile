@@ -22,6 +22,12 @@ type PlayerContextType = {
   playlist: Track[];
   isLiked: (trackIdOrSpotifyId?: string) => boolean;
   toggleLikeTrack: (track: Track) => Promise<void>;
+  isShuffle: boolean;
+  isRepeat: boolean;
+  toggleShuffle: () => void;
+  toggleRepeat: () => void;
+  volume: number;
+  setVolume: (vol: number) => void;
 };
 
 const PlayerContext = createContext<PlayerContextType>({
@@ -41,6 +47,12 @@ const PlayerContext = createContext<PlayerContextType>({
   playlist: [],
   isLiked: () => false,
   toggleLikeTrack: async () => {},
+  isShuffle: false,
+  isRepeat: false,
+  toggleShuffle: () => {},
+  toggleRepeat: () => {},
+  volume: 1,
+  setVolume: () => {},
 });
 
 const AUDIO_HTML = `
@@ -97,6 +109,12 @@ const AUDIO_HTML = `
           audio.currentTime = seconds;
         }
       };
+
+      window.setVolume = function(vol) {
+        if (isFinite(vol)) {
+          audio.volume = Math.max(0, Math.min(1, vol));
+        }
+      };
     </script>
   </body>
 </html>
@@ -111,6 +129,22 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [duration, setDuration] = useState<number>(0);
   const [isPlayerModalVisible, setIsPlayerModalVisible] = useState<boolean>(false);
   const [likedTrackIds, setLikedTrackIds] = useState<Set<string>>(new Set());
+  const [isShuffle, setIsShuffle] = useState<boolean>(false);
+  const [isRepeat, setIsRepeat] = useState<boolean>(false);
+  const [volume, setVolumeState] = useState<number>(1);
+
+  const isShuffleRef = useRef(isShuffle);
+  isShuffleRef.current = isShuffle;
+
+  const isRepeatRef = useRef(isRepeat);
+  isRepeatRef.current = isRepeat;
+
+  const currentTrackRef = useRef(currentTrack);
+  currentTrackRef.current = currentTrack;
+
+  const playlistRef = useRef(playlist);
+  playlistRef.current = playlist;
+
   const webViewRef = useRef<WebView | null>(null);
 
   useEffect(() => {
@@ -204,36 +238,84 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     webViewRef.current.injectJavaScript(`window.seekSong(${seconds}); true;`);
   };
 
+  const setVolume = (vol: number) => {
+    const clamped = Math.max(0, Math.min(1, vol));
+    setVolumeState(clamped);
+    if (webViewRef.current) {
+      webViewRef.current.injectJavaScript(`window.setVolume(${clamped}); true;`);
+    }
+  };
+
   const playNext = () => {
-    if (!currentTrack || playlist.length === 0) return;
-    const currentIndex = playlist.findIndex((t) => t.id === currentTrack.id);
-    const nextIndex = (currentIndex + 1) % playlist.length;
-    playTrack(playlist[nextIndex]);
+    const curr = currentTrackRef.current;
+    const pl = playlistRef.current;
+    if (!curr || pl.length === 0) return;
+    if (pl.length === 1) {
+      seekTo(0);
+      return;
+    }
+
+    const currentIndex = pl.findIndex((t) => (t.id === curr.id) || (t.spotifyId && t.spotifyId === curr.spotifyId));
+    let nextIndex = (currentIndex + 1) % pl.length;
+
+    if (isShuffleRef.current) {
+      let randIndex = Math.floor(Math.random() * pl.length);
+      if (randIndex === currentIndex && pl.length > 1) {
+        randIndex = (currentIndex + 1) % pl.length;
+      }
+      nextIndex = randIndex;
+    }
+
+    playTrack(pl[nextIndex]);
   };
 
   const playPrev = () => {
-    if (!currentTrack || playlist.length === 0) return;
-    const currentIndex = playlist.findIndex((t) => t.id === currentTrack.id);
-    const prevIndex = (currentIndex - 1 + playlist.length) % playlist.length;
-    playTrack(playlist[prevIndex]);
+    const curr = currentTrackRef.current;
+    const pl = playlistRef.current;
+    if (!curr || pl.length === 0) return;
+
+    // Chuẩn Spotify: Nếu đã phát quá 3 giây thì tua lại từ đầu
+    if (currentTime > 3) {
+      seekTo(0);
+      return;
+    }
+
+    const currentIndex = pl.findIndex((t) => (t.id === curr.id) || (t.spotifyId && t.spotifyId === curr.spotifyId));
+    const prevIndex = (currentIndex - 1 + pl.length) % pl.length;
+    playTrack(pl[prevIndex]);
   };
+
+  const toggleShuffle = () => setIsShuffle((prev) => !prev);
+  const toggleRepeat = () => setIsRepeat((prev) => !prev);
 
   const handleMessage = (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'play') {
         setIsPlaying(true);
+        setIsLoadingAudio(false);
       } else if (data.type === 'pause') {
         setIsPlaying(false);
       } else if (data.type === 'ended') {
         setIsPlaying(false);
         setCurrentTime(0);
-        playNext();
+        if (isRepeatRef.current) {
+          if (webViewRef.current) {
+            webViewRef.current.injectJavaScript('window.seekSong(0); window.resumeSong(); true;');
+            setIsPlaying(true);
+          }
+        } else {
+          playNext();
+        }
       } else if (data.type === 'timeupdate') {
         setCurrentTime(data.currentTime);
         if (data.duration && data.duration > 0) {
           setDuration(data.duration);
         }
+      } else if (data.type === 'error') {
+        setIsLoadingAudio(false);
+        setIsPlaying(false);
+        console.warn('[Player] Audio stream error encountered');
       }
     } catch {}
   };
@@ -257,6 +339,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         playlist,
         isLiked,
         toggleLikeTrack,
+        isShuffle,
+        isRepeat,
+        toggleShuffle,
+        toggleRepeat,
+        volume,
+        setVolume,
       }}
     >
       {children}

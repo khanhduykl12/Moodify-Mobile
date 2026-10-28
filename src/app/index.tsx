@@ -12,7 +12,9 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Alert } from 'react-native';
 import { TrackApi } from '@/services/api';
 import { Track } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
@@ -117,9 +119,13 @@ export default function HomeScreen() {
         {/* ========================================================================= */}
         <View style={styles.topBar}>
           <View style={styles.topBarLeft}>
-            <View style={styles.avatar}>
+            <TouchableOpacity
+              style={styles.avatar}
+              activeOpacity={0.8}
+              onPress={() => router.push('/profile')}
+            >
               <Text style={styles.avatarText}>K</Text>
-            </View>
+            </TouchableOpacity>
             <View style={styles.brandRow}>
               <Image
                 source={require('@/assets/images/moodify-logo.png')}
@@ -131,16 +137,41 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.topBarRight}>
-            <TouchableOpacity style={styles.iconBtn}>
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={() => {
+                Alert.alert(
+                  'Thông báo Moodify',
+                  'Chào mừng bạn đến với Moodify Mobile!\n\n✨ Tính năng mới:\n- Tìm kiếm theo cảm xúc AI Moodify\n- Đồng bộ lời bài hát Realtime Karaoke\n- Hỗ trợ thêm bài hát vào Playlist cá nhân\n- Chia sẻ bài hát lên mạng xã hội'
+                );
+              }}
+            >
               <Ionicons name="notifications-outline" size={21} color="#ffffff" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn}>
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={() => router.push('/profile')}
+            >
               <Ionicons name="settings-outline" size={21} color="#ffffff" />
             </TouchableOpacity>
           </View>
         </View>
 
         {/* 2. FILTER PILLS ROW */}
+        {selectedFilter.startsWith('artist_') ? (
+          <View style={styles.activeArtistFilterBadge}>
+            <Text style={styles.activeArtistFilterText} numberOfLines={1}>
+              🎤 Đang xem bài hát của: {selectedFilter.replace('artist_', '')}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setSelectedFilter('all')}
+              style={styles.clearFilterBtn}
+            >
+              <Text style={styles.clearFilterText}>Xóa lọc</Text>
+              <Ionicons name="close-circle" size={16} color="#ffffff" />
+            </TouchableOpacity>
+          </View>
+        ) : null}
         <View style={styles.filterRow}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
             {FILTER_CHIPS.map((chip) => {
@@ -868,5 +899,38 @@ const styles = StyleSheet.create({
   },
   rankMoreBtn: {
     padding: 8,
+  },
+  activeArtistFilterBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#3b0764',
+    borderColor: '#9333ea',
+    borderWidth: 1,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  activeArtistFilterText: {
+    color: '#e9d5ff',
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
+  },
+  clearFilterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#7e22ce',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  clearFilterText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });
