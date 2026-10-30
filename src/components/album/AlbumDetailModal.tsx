@@ -39,6 +39,7 @@ export const AlbumDetailModal: React.FC<AlbumDetailModalProps> = ({ visible, alb
   const { playTrack, currentTrack, isPlaying } = usePlayer();
   const [album, setAlbum] = useState<Album | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isFavorited, setIsFavorited] = useState<boolean>(false);
   const [actionTrack, setActionTrack] = useState<Track | null>(null);
 
   useEffect(() => {
@@ -54,8 +55,13 @@ export const AlbumDetailModal: React.FC<AlbumDetailModalProps> = ({ visible, alb
         .finally(() => {
           setLoading(false);
         });
+
+      AlbumApi.getFavoriteStatus(albumId)
+        .then((fav) => setIsFavorited(fav))
+        .catch(() => {});
     } else {
       setAlbum(null);
+      setIsFavorited(false);
     }
   }, [visible, albumId]);
 
@@ -81,6 +87,20 @@ export const AlbumDetailModal: React.FC<AlbumDetailModalProps> = ({ visible, alb
       });
     } catch (err) {
       console.warn('Lỗi chia sẻ album:', err);
+    }
+  };
+
+  const handleToggleFavorite = async () => {
+    if (!albumId) return;
+    try {
+      const nextStatus = await AlbumApi.toggleFavorite(albumId);
+      setIsFavorited(nextStatus);
+      Alert.alert(
+        'Thông báo',
+        nextStatus ? 'Đã lưu album vào danh sách yêu thích!' : 'Đã bỏ album khỏi danh sách yêu thích.'
+      );
+    } catch {
+      Alert.alert('Thông báo', 'Vui lòng đăng nhập để lưu album yêu thích.');
     }
   };
 
@@ -171,6 +191,18 @@ export const AlbumDetailModal: React.FC<AlbumDetailModalProps> = ({ visible, alb
                     >
                       <Ionicons name="shuffle" size={20} color="#ffffff" />
                       <Text style={styles.shuffleText}>Trộn bài</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.favoriteBtn, isFavorited && styles.favoriteBtnActive]}
+                      activeOpacity={0.8}
+                      onPress={handleToggleFavorite}
+                    >
+                      <Ionicons
+                        name={isFavorited ? 'heart' : 'heart-outline'}
+                        size={22}
+                        color={isFavorited ? '#ec4899' : '#ffffff'}
+                      />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -374,6 +406,19 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '700',
     fontSize: 14,
+  },
+  favoriteBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#262636',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  favoriteBtnActive: {
+    backgroundColor: 'rgba(236, 72, 153, 0.2)',
+    borderWidth: 1,
+    borderColor: '#ec4899',
   },
   trackRow: {
     flexDirection: 'row',

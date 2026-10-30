@@ -14,10 +14,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { PlaylistApi, TrackApi, UserLibraryApi } from '@/services/api';
-import { Playlist, Track } from '@/types';
+import { PlaylistApi, TrackApi, UserLibraryApi, AlbumApi } from '@/services/api';
+import { Playlist, Track, Album } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
 import { TrackActionModal } from '@/components/player/TrackActionModal';
+import { AlbumDetailModal } from '@/components/album/AlbumDetailModal';
 
 const DEFAULT_PLAYLISTS: Playlist[] = [
   {
@@ -62,6 +63,8 @@ export default function LibraryScreen() {
   const { playTrack, currentTrack, isPlaying } = usePlayer();
   const [filter, setFilter] = useState('all');
   const [playlists, setPlaylists] = useState<Playlist[]>(DEFAULT_PLAYLISTS);
+  const [favoriteAlbums, setFavoriteAlbums] = useState<Album[]>([]);
+  const [selectedAlbumId, setSelectedAlbumId] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
@@ -72,7 +75,7 @@ export default function LibraryScreen() {
   const [loadingTracks, setLoadingTracks] = useState(false);
   const [actionTrack, setActionTrack] = useState<Track | null>(null);
 
-  const fetchPlaylists = () => {
+  const fetchLibraryData = () => {
     PlaylistApi.getMyPlaylists()
       .then((data) => {
         if (data && data.length > 0) {
@@ -80,11 +83,17 @@ export default function LibraryScreen() {
         }
       })
       .catch(() => {});
+
+    AlbumApi.getUserFavoriteAlbums()
+      .then((albums) => {
+        setFavoriteAlbums(albums || []);
+      })
+      .catch(() => {});
   };
 
   useFocusEffect(
     useCallback(() => {
-      fetchPlaylists();
+      fetchLibraryData();
     }, [])
   );
 
@@ -217,11 +226,11 @@ export default function LibraryScreen() {
 
         {/* Filter Pills */}
         <View style={styles.filterRow}>
-          {['all', 'playlists', 'artists', 'downloaded'].map((item) => {
+          {['all', 'playlists', 'albums', 'downloaded'].map((item) => {
             const labels: Record<string, string> = {
               all: 'Tất cả',
               playlists: 'Danh sách phát',
-              artists: 'Nghệ sĩ',
+              albums: 'Album yêu thích',
               downloaded: 'Đã tải xuống',
             };
             const active = filter === item;
@@ -239,25 +248,80 @@ export default function LibraryScreen() {
           })}
         </View>
 
-        {/* Playlist List */}
+        {/* Unified Library List */}
         <FlatList
-          data={playlists}
-          keyExtractor={(item) => item.id}
+          data={
+            filter === 'playlists'
+              ? playlists.map((p) => ({ type: 'playlist' as const, playlist: p }))
+              : filter === 'albums'
+              ? favoriteAlbums.map((a) => ({ type: 'album' as const, album: a }))
+              : [
+                  ...playlists.map((p) => ({ type: 'playlist' as const, playlist: p })),
+                  ...favoriteAlbums.map((a) => ({ type: 'album' as const, album: a })),
+                ]
+          }
+          keyExtractor={(item) => (item.type === 'playlist' ? item.playlist.id : `album_${item.album.id}`)}
           contentContainerStyle={styles.listContent}
+          ListEmptyComponent={
+            filter === 'albums' ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <Ionicons name="disc-outline" size={48} color="#4b5563" style={{ marginBottom: 10 }} />
+                <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '700' }}>
+                  Chưa có album yêu thích
+                </Text>
+                <Text style={{ color: '#9ca3af', fontSize: 13, marginTop: 4, textAlign: 'center' }}>
+                  Khám phá các album tại Trang chủ và nhấn biểu tượng trái tim để lưu lại đây!
+                </Text>
+              </View>
+            ) : undefined
+          }
           renderItem={({ item }) => {
-            const isFav = item.id === 'fav';
+            if (item.type === 'album') {
+              const alb = item.album;
+              return (
+                <TouchableOpacity
+                  style={styles.playlistItem}
+                  onPress={() => setSelectedAlbumId(alb.id)}
+                  activeOpacity={0.7}
+                >
+                  {alb.coverUrl ? (
+                    <Image source={{ uri: alb.coverUrl }} style={styles.cover} />
+                  ) : (
+                    <View style={styles.placeholderCover}>
+                      <Ionicons name="disc" size={26} color="#8b5cf6" />
+                    </View>
+                  )}
+
+                  <View style={styles.info}>
+                    <Text style={styles.playlistName} numberOfLines={1}>
+                      {alb.title}
+                    </Text>
+                    <Text style={styles.playlistMeta} numberOfLines={1}>
+                      Album • {alb.authorName || 'Nhiều nghệ sĩ'} • {alb.trackCount || 0} bài hát
+                    </Text>
+                  </View>
+
+                  <View style={styles.albumFavBadge}>
+                    <Ionicons name="heart" size={16} color="#ec4899" />
+                  </View>
+                </TouchableOpacity>
+              );
+            }
+
+            const pl = item.playlist;
+            const isFav = pl.id === 'fav';
             return (
               <TouchableOpacity
                 style={styles.playlistItem}
-                onPress={() => handleOpenPlaylist(item)}
+                onPress={() => handleOpenPlaylist(pl)}
                 activeOpacity={0.7}
               >
                 {isFav ? (
                   <View style={styles.favCover}>
                     <Ionicons name="heart" size={26} color="#ffffff" />
                   </View>
-                ) : item.coverUrl ? (
-                  <Image source={{ uri: item.coverUrl }} style={styles.cover} />
+                ) : pl.coverUrl ? (
+                  <Image source={{ uri: pl.coverUrl }} style={styles.cover} />
                 ) : (
                   <View style={styles.placeholderCover}>
                     <Ionicons name="musical-notes" size={26} color="#8b5cf6" />
@@ -266,10 +330,10 @@ export default function LibraryScreen() {
 
                 <View style={styles.info}>
                   <Text style={styles.playlistName} numberOfLines={1}>
-                    {item.name}
+                    {pl.name}
                   </Text>
                   <Text style={styles.playlistMeta} numberOfLines={1}>
-                    Danh sách phát • {item.trackCount || 0} bài hát
+                    Danh sách phát • {pl.trackCount || 0} bài hát
                   </Text>
                 </View>
 
@@ -491,6 +555,16 @@ export default function LibraryScreen() {
           track={actionTrack}
           onClose={() => setActionTrack(null)}
         />
+
+        {/* Album Detail Modal */}
+        <AlbumDetailModal
+          visible={!!selectedAlbumId}
+          albumId={selectedAlbumId}
+          onClose={() => {
+            setSelectedAlbumId(null);
+            fetchLibraryData();
+          }}
+        />
       </SafeAreaView>
     </View>
   );
@@ -617,6 +691,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   pinBadge: {
+    padding: 6,
+  },
+  albumFavBadge: {
     padding: 6,
   },
 

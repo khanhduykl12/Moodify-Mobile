@@ -252,6 +252,29 @@ export const AlbumApi = {
       return null;
     }
   },
+
+  toggleFavorite: async (albumId: number | string): Promise<boolean> => {
+    const res = await apiClient.post<{ favorited: boolean }>(`/albums/${albumId}/favorite`);
+    return !!res.data?.favorited;
+  },
+
+  getFavoriteStatus: async (albumId: number | string): Promise<boolean> => {
+    try {
+      const res = await apiClient.get<{ favorited: boolean }>(`/albums/${albumId}/favorite/status`);
+      return !!res.data?.favorited;
+    } catch {
+      return false;
+    }
+  },
+
+  getUserFavoriteAlbums: async (): Promise<Album[]> => {
+    try {
+      const res = await apiClient.get<Album[]>('/albums/favorites/me');
+      return res.data || [];
+    } catch {
+      return [];
+    }
+  },
 };
 
 export const ArtistApi = {
