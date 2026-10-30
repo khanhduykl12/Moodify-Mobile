@@ -15,12 +15,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Alert } from 'react-native';
-import { TrackApi, AlbumApi } from '@/services/api';
+import { TrackApi, AlbumApi, NotificationApi } from '@/services/api';
 import { Track, Album } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
 import { TrackActionModal } from '@/components/player/TrackActionModal';
 import { AlbumDetailModal } from '@/components/album/AlbumDetailModal';
 import { ArtistDetailModal } from '@/components/artist/ArtistDetailModal';
+import { NotificationModal } from '@/components/notification/NotificationModal';
 
 const { width } = Dimensions.get('window');
 
@@ -52,6 +53,8 @@ export default function HomeScreen() {
   const [selectedAlbumId, setSelectedAlbumId] = useState<number | null>(null);
   const [selectedArtist, setSelectedArtist] = useState<{ name: string; image?: string | null } | null>(null);
   const [actionTrack, setActionTrack] = useState<Track | null>(null);
+  const [notificationModalVisible, setNotificationModalVisible] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Tải danh sách bài hát và album từ Backend
   const loadData = async () => {
@@ -62,6 +65,10 @@ export default function HomeScreen() {
       ]);
       setAllTracks(trackData.content || []);
       setAlbums(albumData.content || []);
+
+      NotificationApi.getMyNotifications(1)
+        .then((res) => setUnreadCount(res.unreadCount))
+        .catch(() => {});
     } catch (error) {
       console.warn('Lỗi tải dữ liệu trang chủ:', error);
     } finally {
@@ -148,14 +155,16 @@ export default function HomeScreen() {
           <View style={styles.topBarRight}>
             <TouchableOpacity
               style={styles.iconBtn}
-              onPress={() => {
-                Alert.alert(
-                  'Thông báo Moodify',
-                  'Chào mừng bạn đến với Moodify Mobile!\n\n✨ Tính năng mới:\n- Tìm kiếm theo cảm xúc AI Moodify\n- Đồng bộ lời bài hát Realtime Karaoke\n- Hỗ trợ thêm bài hát vào Playlist cá nhân\n- Chia sẻ bài hát lên mạng xã hội'
-                );
-              }}
+              onPress={() => setNotificationModalVisible(true)}
             >
               <Ionicons name="notifications-outline" size={21} color="#ffffff" />
+              {unreadCount > 0 && (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.iconBtn}
@@ -527,6 +536,13 @@ export default function HomeScreen() {
           artistImage={selectedArtist?.image}
           onClose={() => setSelectedArtist(null)}
         />
+
+        {/* Notification Inbox Modal */}
+        <NotificationModal
+          visible={notificationModalVisible}
+          onClose={() => setNotificationModalVisible(false)}
+          onNotificationsUpdated={(count) => setUnreadCount(count)}
+        />
       </SafeAreaView>
     </View>
   );
@@ -661,6 +677,24 @@ const styles = StyleSheet.create({
   },
   iconBtn: {
     padding: 6,
+    position: 'relative',
+  },
+  notifBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    backgroundColor: '#ec4899',
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  notifBadgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '900',
   },
 
   // 2. Filter Pills

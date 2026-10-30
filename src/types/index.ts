@@ -109,3 +109,14 @@ export type CheckoutResult = {
   packageName?: string;
 };
 
+export type NotificationItem = {
+  id: string;
+  title: string;
+  message: string;
+  type?: 'SYSTEM' | 'PROMO' | 'BILLING' | 'MODERATION' | 'ANNOUNCEMENT';
+  linkUrl?: string;
+  createdAt: string;
+  readAt?: string | null;
+  isRead?: boolean;
+};
+

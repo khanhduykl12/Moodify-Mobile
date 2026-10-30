@@ -11,6 +11,7 @@ import {
   Artist,
   SubscriptionPackage,
   CheckoutResult,
+  NotificationItem,
 } from '../types';
 
 export const apiClient = axios.create({
@@ -413,4 +414,33 @@ export const SearchHistoryApi = {
     } catch {}
   },
 };
+
+export const NotificationApi = {
+  getMyNotifications: async (limit = 30): Promise<{ items: NotificationItem[]; unreadCount: number }> => {
+    try {
+      const res = await apiClient.get<any>('/notifications/me', {
+        params: { limit },
+      });
+      return {
+        items: res.data?.items || [],
+        unreadCount: res.data?.unreadCount || 0,
+      };
+    } catch {
+      return { items: [], unreadCount: 0 };
+    }
+  },
+
+  markRead: async (id: string): Promise<void> => {
+    try {
+      await apiClient.post(`/notifications/${id}/read`);
+    } catch {}
+  },
+
+  markAllRead: async (): Promise<void> => {
+    try {
+      await apiClient.post('/notifications/read-all');
+    } catch {}
+  },
+};
+
 
