@@ -28,6 +28,9 @@ type PlayerContextType = {
   toggleRepeat: () => void;
   volume: number;
   setVolume: (vol: number) => void;
+  sleepTimerMinutes: number | null;
+  sleepTimerRemaining: number | null;
+  setSleepTimer: (minutes: number | null) => void;
 };
 
 const PlayerContext = createContext<PlayerContextType>({
@@ -53,6 +56,9 @@ const PlayerContext = createContext<PlayerContextType>({
   toggleRepeat: () => {},
   volume: 1,
   setVolume: () => {},
+  sleepTimerMinutes: null,
+  sleepTimerRemaining: null,
+  setSleepTimer: () => {},
 });
 
 const AUDIO_HTML = `
@@ -132,6 +138,48 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isShuffle, setIsShuffle] = useState<boolean>(false);
   const [isRepeat, setIsRepeat] = useState<boolean>(false);
   const [volume, setVolumeState] = useState<number>(1);
+  const [sleepTimerMinutes, setSleepTimerMinutes] = useState<number | null>(null);
+  const [sleepTimerRemaining, setSleepTimerRemaining] = useState<number | null>(null);
+
+  const sleepTimerRef = useRef<{ minutes: number | null; remaining: number | null }>({
+    minutes: null,
+    remaining: null,
+  });
+  sleepTimerRef.current = { minutes: sleepTimerMinutes, remaining: sleepTimerRemaining };
+
+  const setSleepTimer = (minutes: number | null) => {
+    setSleepTimerMinutes(minutes);
+    if (minutes === null) {
+      setSleepTimerRemaining(null);
+    } else if (minutes === -1) {
+      // End of current track
+      setSleepTimerRemaining(-1);
+    } else {
+      setSleepTimerRemaining(minutes * 60);
+    }
+  };
+
+  // Countdown timer for sleep timer
+  useEffect(() => {
+    if (!sleepTimerMinutes || sleepTimerMinutes <= 0 || sleepTimerRemaining === null) return;
+
+    const interval = setInterval(() => {
+      setSleepTimerRemaining((prev) => {
+        if (prev === null || prev <= 1) {
+          // Time expired! Pause music
+          if (webViewRef.current) {
+            webViewRef.current.injectJavaScript('window.pauseSong(); true;');
+          }
+          setIsPlaying(false);
+          setSleepTimerMinutes(null);
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [sleepTimerMinutes]);
 
   const isShuffleRef = useRef(isShuffle);
   isShuffleRef.current = isShuffle;
@@ -299,6 +347,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       } else if (data.type === 'ended') {
         setIsPlaying(false);
         setCurrentTime(0);
+        // Kiểm tra hẹn giờ dừng khi hết bài hát
+        if (sleepTimerRef.current.minutes === -1) {
+          setSleepTimerMinutes(null);
+          setSleepTimerRemaining(null);
+          return;
+        }
+
         if (isRepeatRef.current) {
           if (webViewRef.current) {
             webViewRef.current.injectJavaScript('window.seekSong(0); window.resumeSong(); true;');
@@ -345,6 +400,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         toggleRepeat,
         volume,
         setVolume,
+        sleepTimerMinutes,
+        sleepTimerRemaining,
+        setSleepTimer,
       }}
     >
       {children}

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { TrackApi } from '@/services/api';
+import { TrackApi, SearchHistoryApi } from '@/services/api';
 import { Track } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
 import { TrackActionModal } from '@/components/player/TrackActionModal';
@@ -45,7 +45,26 @@ export default function SearchScreen() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Track[]>([]);
   const [searching, setSearching] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [actionTrack, setActionTrack] = useState<Track | null>(null);
+
+  useEffect(() => {
+    SearchHistoryApi.getHistory()
+      .then((history) => {
+        if (history && history.length > 0) {
+          const unique = Array.from(new Set(history.filter((s) => s && s.trim())));
+          setRecentSearches(unique.slice(0, 8));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const recordQuery = (q: string) => {
+    if (!q || !q.trim() || q.trim().length < 2) return;
+    const clean = q.trim();
+    SearchHistoryApi.recordSearch(clean);
+    setRecentSearches((prev) => Array.from(new Set([clean, ...prev])).slice(0, 8));
+  };
 
   useEffect(() => {
     if (!query.trim()) {
@@ -68,24 +87,28 @@ export default function SearchScreen() {
           const data = await TrackApi.searchTracks(query.trim(), 0, 30);
           setResults(data.content || []);
         }
+        recordQuery(query);
       } catch (err) {
         console.warn('Lỗi tìm kiếm:', err);
       } finally {
         setSearching(false);
       }
-    }, 350);
+    }, 400);
 
     return () => clearTimeout(timer);
   }, [query, searchMode]);
 
   const handleCategoryPress = (category: typeof BROWSE_CATEGORIES[0]) => {
     setSearchMode('standard');
-    setQuery(category.title.split(' ')[0]);
+    const term = category.title.split(' ')[0];
+    setQuery(term);
+    recordQuery(term);
   };
 
   const handleMoodPresetPress = (presetQuery: string) => {
     setSearchMode('mood');
     setQuery(presetQuery);
+    recordQuery(presetQuery);
   };
 
   return (
@@ -159,6 +182,30 @@ export default function SearchScreen() {
                   onPress={() => handleMoodPresetPress(preset.query)}
                 >
                   <Text style={styles.moodPresetText}>{preset.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Recent Search History Chips */}
+        {query === '' && recentSearches.length > 0 && (
+          <View style={styles.recentHistoryContainer}>
+            <View style={styles.recentHistoryHeader}>
+              <Text style={styles.recentHistoryTitle}>🕒 Tìm kiếm gần đây</Text>
+              <TouchableOpacity onPress={() => setRecentSearches([])}>
+                <Text style={styles.clearRecentText}>Xóa lịch sử</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recentHistoryScroll}>
+              {recentSearches.map((item, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={styles.recentHistoryChip}
+                  onPress={() => setQuery(item)}
+                >
+                  <Ionicons name="time-outline" size={13} color="#a78bfa" style={{ marginRight: 5 }} />
+                  <Text style={styles.recentHistoryText}>{item}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -356,6 +403,44 @@ const styles = StyleSheet.create({
   moodPresetText: {
     fontSize: 12,
     color: '#e9d5ff',
+    fontWeight: '600',
+  },
+  recentHistoryContainer: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
+  recentHistoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  recentHistoryTitle: {
+    fontSize: 13,
+    color: '#9ca3af',
+    fontWeight: '700',
+  },
+  clearRecentText: {
+    fontSize: 11,
+    color: '#6b7280',
+    fontWeight: '600',
+  },
+  recentHistoryScroll: {
+    gap: 8,
+  },
+  recentHistoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1c1c28',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#2d2d3d',
+  },
+  recentHistoryText: {
+    fontSize: 12,
+    color: '#d1d5db',
     fontWeight: '600',
   },
   browseTitle: {

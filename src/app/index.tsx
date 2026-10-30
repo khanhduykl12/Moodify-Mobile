@@ -15,10 +15,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Alert } from 'react-native';
-import { TrackApi } from '@/services/api';
-import { Track } from '@/types';
+import { TrackApi, AlbumApi } from '@/services/api';
+import { Track, Album } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
 import { TrackActionModal } from '@/components/player/TrackActionModal';
+import { AlbumDetailModal } from '@/components/album/AlbumDetailModal';
+import { ArtistDetailModal } from '@/components/artist/ArtistDetailModal';
 
 const { width } = Dimensions.get('window');
 
@@ -46,15 +48,22 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [allTracks, setAllTracks] = useState<Track[]>([]);
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const [selectedAlbumId, setSelectedAlbumId] = useState<number | null>(null);
+  const [selectedArtist, setSelectedArtist] = useState<{ name: string; image?: string | null } | null>(null);
   const [actionTrack, setActionTrack] = useState<Track | null>(null);
 
-  // Tải danh sách bài hát từ Backend
+  // Tải danh sách bài hát và album từ Backend
   const loadData = async () => {
     try {
-      const data = await TrackApi.getTracks(0, 50);
-      setAllTracks(data.content || []);
+      const [trackData, albumData] = await Promise.all([
+        TrackApi.getTracks(0, 50),
+        AlbumApi.getPublicAlbums('', 0, 10),
+      ]);
+      setAllTracks(trackData.content || []);
+      setAlbums(albumData.content || []);
     } catch (error) {
-      console.warn('Lỗi tải bài hát:', error);
+      console.warn('Lỗi tải dữ liệu trang chủ:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -380,7 +389,7 @@ export default function HomeScreen() {
                 <TouchableOpacity
                   style={styles.artistCard}
                   activeOpacity={0.8}
-                  onPress={() => setSelectedFilter('artist_' + item.name)}
+                  onPress={() => setSelectedArtist({ name: item.name, image: item.image })}
                 >
                   <View style={styles.artistAvatarWrapper}>
                     {item.image ? (
@@ -397,6 +406,52 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               )}
             />
+
+            {/* ===================================================================== */}
+            {/* 7.5. CAROUSEL: Album tuyển chọn                                      */}
+            {/* ===================================================================== */}
+            {albums.length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Album & Tuyển tập nổi bật</Text>
+                  <View style={styles.albumBadge}>
+                    <Text style={styles.albumBadgeText}>HOT</Text>
+                  </View>
+                </View>
+
+                <FlatList
+                  horizontal
+                  data={albums}
+                  keyExtractor={(item) => String(item.id)}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.albumCard}
+                      onPress={() => setSelectedAlbumId(item.id)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.albumCoverContainer}>
+                        {item.coverUrl ? (
+                          <Image source={{ uri: item.coverUrl }} style={styles.albumCover} />
+                        ) : (
+                          <View style={styles.albumPlaceholder}>
+                            <Ionicons name="disc" size={32} color="#a78bfa" />
+                          </View>
+                        )}
+                        <View style={styles.albumDiscEffect} />
+                      </View>
+                      <Text style={styles.albumTitle} numberOfLines={1}>
+                        {item.title}
+                      </Text>
+                      <Text style={styles.albumArtist} numberOfLines={1}>
+                        {item.authorName || item.artistName || 'Nhiều nghệ sĩ'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                />
+              </>
+            )}
 
             {/* ===================================================================== */}
             {/* 8. TOP BẢNG XẾP HẠNG                                                 */}
@@ -457,6 +512,21 @@ export default function HomeScreen() {
           track={actionTrack}
           onClose={() => setActionTrack(null)}
         />
+
+        {/* Album Detail Modal */}
+        <AlbumDetailModal
+          visible={!!selectedAlbumId}
+          albumId={selectedAlbumId}
+          onClose={() => setSelectedAlbumId(null)}
+        />
+
+        {/* Artist Detail Modal */}
+        <ArtistDetailModal
+          visible={!!selectedArtist}
+          artistName={selectedArtist?.name || null}
+          artistImage={selectedArtist?.image}
+          onClose={() => setSelectedArtist(null)}
+        />
       </SafeAreaView>
     </View>
   );
@@ -482,6 +552,64 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     marginTop: 12,
     fontSize: 14,
+  },
+
+  // Album section styles
+  albumBadge: {
+    backgroundColor: '#ec4899',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  albumBadgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  albumCard: {
+    width: 140,
+    marginRight: 14,
+  },
+  albumCoverContainer: {
+    width: 140,
+    height: 140,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#1c1c28',
+    marginBottom: 8,
+    position: 'relative',
+  },
+  albumCover: {
+    width: '100%',
+    height: '100%',
+  },
+  albumPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1c1c28',
+  },
+  albumDiscEffect: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  albumTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 2,
+  },
+  albumArtist: {
+    fontSize: 12,
+    color: '#9ca3af',
   },
 
   // 1. Top Bar

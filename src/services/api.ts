@@ -1,7 +1,17 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { API_BASE_URL } from '../constants/config';
 import { Storage } from './storage';
-import { AuthResponse, Track, TrackPageResponse, Playlist, UserProfile } from '../types';
+import {
+  AuthResponse,
+  Track,
+  TrackPageResponse,
+  Playlist,
+  UserProfile,
+  Album,
+  Artist,
+  SubscriptionPackage,
+  CheckoutResult,
+} from '../types';
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -218,3 +228,166 @@ export const UserLibraryApi = {
     }
   },
 };
+
+export const AlbumApi = {
+  getPublicAlbums: async (q = '', page = 0, size = 20): Promise<{ content: Album[]; totalPages: number }> => {
+    try {
+      const res = await apiClient.get<any>('/albums', {
+        params: { q: q || undefined, page, size },
+      });
+      return {
+        content: res.data?.content || [],
+        totalPages: res.data?.totalPages || 1,
+      };
+    } catch {
+      return { content: [], totalPages: 1 };
+    }
+  },
+
+  getAlbumDetail: async (id: number): Promise<Album | null> => {
+    try {
+      const res = await apiClient.get<Album>(`/albums/${id}`);
+      return res.data;
+    } catch {
+      return null;
+    }
+  },
+};
+
+export const ArtistApi = {
+  getArtistProfile: async (artistId: string): Promise<Artist | null> => {
+    try {
+      const res = await apiClient.get<any>(`/artists/${artistId}`);
+      return res.data;
+    } catch {
+      return null;
+    }
+  },
+
+  getArtistTracks: async (artistId: string, page = 0, size = 20): Promise<Track[]> => {
+    try {
+      const res = await apiClient.get<TrackPageResponse>(`/artists/${artistId}/tracks`, {
+        params: { page, size },
+      });
+      return res.data?.content || [];
+    } catch {
+      return [];
+    }
+  },
+
+  followArtist: async (artistId: string): Promise<void> => {
+    await apiClient.post(`/artists/${artistId}/follow`);
+  },
+
+  unfollowArtist: async (artistId: string): Promise<void> => {
+    await apiClient.delete(`/artists/${artistId}/follow`);
+  },
+};
+
+export const SubscriptionApi = {
+  getPackages: async (): Promise<SubscriptionPackage[]> => {
+    try {
+      const res = await apiClient.get<any[]>('/packages');
+      return (res.data || []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        priceVnd: p.priceVnd || p.price || 0,
+        durationDays: p.durationDays || 30,
+        badge: p.badge || 'VIP',
+        features: p.features || [
+          'Âm thanh chuẩn Lossless 320kbps',
+          'Không quảng cáo ngắt quãng',
+          'Tải nhạc nghe ngoại tuyến không giới hạn',
+          'Huy hiệu thành viên VIP độc quyền',
+        ],
+        tierCode: p.tierCode,
+      }));
+    } catch {
+      return [
+        {
+          id: 1,
+          name: 'Gói Cá Nhân (1 Tháng)',
+          description: 'Trải nghiệm toàn bộ kho nhạc không quảng cáo',
+          priceVnd: 59000,
+          durationDays: 30,
+          badge: 'PHỔ BIẾN',
+          features: [
+            'Âm thanh chuẩn Lossless 320kbps',
+            'Không quảng cáo ngắt quãng',
+            'Mở khóa toàn bộ album VIP',
+            'Tự do chuyển bài không giới hạn',
+          ],
+        },
+        {
+          id: 2,
+          name: 'Gói Sinh Viên',
+          description: 'Ưu đãi đặc biệt cho sinh viên',
+          priceVnd: 29000,
+          durationDays: 30,
+          badge: 'TIẾT KIỆM',
+          features: [
+            'Âm thanh chất lượng cao HD',
+            'Không quảng cáo làm phiền',
+            'Hỗ trợ toàn bộ tính năng nghe nhạc',
+          ],
+        },
+        {
+          id: 3,
+          name: 'Gói 1 Năm (Siêu Tiết Kiệm)',
+          description: 'Nghe nhạc thả ga trọn vẹn 365 ngày',
+          priceVnd: 499000,
+          durationDays: 365,
+          badge: 'TIẾT KIỆM 30%',
+          features: [
+            'Tất cả quyền lợi của gói VIP',
+            'Tiết kiệm đến 30% so với gia hạn tháng',
+            'Huy hiệu VIP Kim Cương',
+            'Ưu tiên hỗ trợ 24/7',
+          ],
+        },
+      ];
+    }
+  },
+
+  getMySubscription: async (): Promise<any> => {
+    try {
+      const res = await apiClient.get('/subscriptions/me');
+      return res.data;
+    } catch {
+      return null;
+    }
+  },
+
+  checkout: async (packageId: number): Promise<CheckoutResult> => {
+    const res = await apiClient.post<CheckoutResult>('/subscriptions/checkout', { packageId });
+    return res.data;
+  },
+
+  getPaymentStatus: async (orderCode: string): Promise<{ status: string; orderCode: string }> => {
+    const res = await apiClient.get<{ status: string; orderCode: string }>(
+      `/subscriptions/payment-status/${orderCode}`
+    );
+    return res.data;
+  },
+};
+
+export const SearchHistoryApi = {
+  getHistory: async (page = 0, size = 15): Promise<string[]> => {
+    try {
+      const res = await apiClient.get<any>('/users/me/search-history', {
+        params: { page, size },
+      });
+      return (res.data?.content || []).map((item: any) => item.query || item.searchQuery || item.q || '').filter(Boolean);
+    } catch {
+      return [];
+    }
+  },
+
+  recordSearch: async (query: string): Promise<void> => {
+    try {
+      await apiClient.post('/users/me/search-history', { query, searchType: 'ALL' });
+    } catch {}
+  },
+};
+

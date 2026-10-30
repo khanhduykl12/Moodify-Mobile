@@ -110,10 +110,14 @@ export const FullscreenPlayer: React.FC = () => {
     toggleRepeat,
     volume,
     setVolume,
+    sleepTimerMinutes,
+    sleepTimerRemaining,
+    setSleepTimer,
   } = usePlayer();
 
   const [showLyrics, setShowLyrics] = useState(false);
   const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
+  const [showSleepTimerModal, setShowSleepTimerModal] = useState(false);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loadingPlaylists, setLoadingPlaylists] = useState(false);
 
@@ -221,6 +225,23 @@ export const FullscreenPlayer: React.FC = () => {
             </View>
 
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <TouchableOpacity
+                style={[styles.headerBtn, { marginRight: 8 }]}
+                onPress={() => setShowSleepTimerModal(true)}
+              >
+                <Ionicons
+                  name={sleepTimerMinutes !== null ? 'moon' : 'moon-outline'}
+                  size={21}
+                  color={sleepTimerMinutes !== null ? '#a78bfa' : '#ffffff'}
+                />
+                {sleepTimerRemaining !== null && (
+                  <View style={styles.timerBadge}>
+                    <Text style={styles.timerBadgeText}>
+                      {sleepTimerMinutes === -1 ? 'End' : `${Math.ceil(sleepTimerRemaining / 60)}m`}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
               <TouchableOpacity style={[styles.headerBtn, { marginRight: 6 }]} onPress={handleShare}>
                 <Ionicons name="share-social-outline" size={22} color="#ffffff" />
               </TouchableOpacity>
@@ -471,6 +492,70 @@ export const FullscreenPlayer: React.FC = () => {
                   onPress={() => setShowPlaylistPicker(false)}
                 >
                   <Text style={styles.closeSheetText}>Hủy bỏ</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+
+          {/* Sleep Timer Picker Modal */}
+          <Modal
+            visible={showSleepTimerModal}
+            animationType="fade"
+            transparent={true}
+            onRequestClose={() => setShowSleepTimerModal(false)}
+          >
+            <View style={styles.sheetOverlay}>
+              <View style={styles.sheetCard}>
+                <View style={styles.sleepSheetHeader}>
+                  <Ionicons name="moon" size={22} color="#a78bfa" style={{ marginRight: 8 }} />
+                  <Text style={styles.sheetTitle}>Hẹn giờ tắt nhạc</Text>
+                </View>
+                <Text style={styles.sheetSubtitle}>
+                  {sleepTimerMinutes !== null
+                    ? `Đang bật: ${sleepTimerMinutes === -1 ? 'Dừng khi hết bài' : `Tắt sau ${Math.ceil((sleepTimerRemaining || 0) / 60)} phút`}`
+                    : 'Tự động tạm dừng phát nhạc khi bạn chìm vào giấc ngủ.'}
+                </Text>
+
+                <View style={styles.sleepOptionsList}>
+                  {[
+                    { label: 'Tắt hẹn giờ', value: null },
+                    { label: '15 phút', value: 15 },
+                    { label: '30 phút', value: 30 },
+                    { label: '45 phút', value: 45 },
+                    { label: '60 phút', value: 60 },
+                    { label: 'Khi kết thúc bài hát này', value: -1 },
+                  ].map((option) => {
+                    const isSelected = sleepTimerMinutes === option.value;
+                    return (
+                      <TouchableOpacity
+                        key={option.label}
+                        style={[styles.sleepOptionItem, isSelected && styles.sleepOptionItemActive]}
+                        onPress={() => {
+                          setSleepTimer(option.value);
+                          setShowSleepTimerModal(false);
+                          if (option.value === null) {
+                            Alert.alert('Thông báo', 'Đã hủy hẹn giờ tắt nhạc.');
+                          } else if (option.value === -1) {
+                            Alert.alert('Hẹn giờ', 'Nhạc sẽ dừng sau khi kết thúc bài hát hiện tại.');
+                          } else {
+                            Alert.alert('Hẹn giờ', `Nhạc sẽ tự động dừng sau ${option.value} phút.`);
+                          }
+                        }}
+                      >
+                        <Text style={[styles.sleepOptionText, isSelected && styles.sleepOptionTextActive]}>
+                          {option.label}
+                        </Text>
+                        {isSelected && <Ionicons name="checkmark-circle" size={20} color="#8b5cf6" />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <TouchableOpacity
+                  style={styles.closeSheetBtn}
+                  onPress={() => setShowSleepTimerModal(false)}
+                >
+                  <Text style={styles.closeSheetText}>Đóng</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -816,5 +901,54 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
+  },
+  timerBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -4,
+    backgroundColor: '#8b5cf6',
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    minWidth: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timerBadgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  sleepSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  sleepOptionsList: {
+    marginBottom: 16,
+  },
+  sleepOptionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 13,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#161622',
+    marginBottom: 8,
+  },
+  sleepOptionItemActive: {
+    backgroundColor: 'rgba(139, 92, 246, 0.2)',
+    borderWidth: 1,
+    borderColor: '#8b5cf6',
+  },
+  sleepOptionText: {
+    fontSize: 14,
+    color: '#d1d5db',
+    fontWeight: '600',
+  },
+  sleepOptionTextActive: {
+    color: '#ffffff',
+    fontWeight: '800',
   },
 });

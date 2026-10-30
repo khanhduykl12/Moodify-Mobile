@@ -68,4 +68,44 @@ export type Artist = {
   followers?: number;
   popularity?: number;
   imageUrl?: string | null;
+  bio?: string;
+  isFollowed?: boolean;
 };
+
+export type Album = {
+  id: number;
+  title: string;
+  description?: string;
+  coverUrl?: string | null;
+  authorName?: string;
+  artistName?: string;
+  authorAvatar?: string | null;
+  releaseDate?: string;
+  trackCount?: number;
+  isFavorited?: boolean;
+  tracks?: Track[];
+};
+
+export type SubscriptionPackage = {
+  id: number;
+  name: string;
+  description?: string;
+  priceVnd: number;
+  durationDays: number;
+  badge?: string;
+  features?: string[];
+  tierCode?: string;
+};
+
+export type CheckoutResult = {
+  orderCode: string;
+  qrUrl: string;
+  bankName: string;
+  accountNumber: string;
+  accountHolder: string;
+  amount: number;
+  transferContent: string;
+  packageId?: number;
+  packageName?: string;
+};
+

@@ -17,6 +17,7 @@ import { AuthApi } from '@/services/api';
 import { Storage } from '@/services/storage';
 import { API_BASE_URL } from '@/constants/config';
 import { UserProfile } from '@/types';
+import { PremiumModal } from '@/components/subscription/PremiumModal';
 
 export default function ProfileScreen() {
   const [dataSaver, setDataSaver] = useState(false);
@@ -29,6 +30,7 @@ export default function ProfileScreen() {
   const [authModalVisible, setAuthModalVisible] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authLoading, setAuthLoading] = useState(false);
+  const [premiumModalVisible, setPremiumModalVisible] = useState(false);
 
   // Form Fields
   const [username, setUsername] = useState('');
@@ -187,6 +189,37 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
           )}
+
+          {/* VIP Premium Banner */}
+          <View style={styles.vipBannerCard}>
+            <View style={styles.vipBannerContent}>
+              <View style={styles.vipBannerLeft}>
+                <View style={styles.vipCrownBadge}>
+                  <Text style={{ fontSize: 22 }}>👑</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                    <Text style={styles.vipBannerTitle}>Moodify VIP Premium</Text>
+                    <View style={styles.vipTag}>
+                      <Text style={styles.vipTagText}>LOSSLESS</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.vipBannerSub}>
+                    Mở khóa kho nhạc VIP, âm thanh chất lượng 320kbps & không giới hạn chuyển bài.
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.vipUpgradeBtn}
+                onPress={() => setPremiumModalVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="sparkles" size={16} color="#0c0c10" style={{ marginRight: 6 }} />
+                <Text style={styles.vipUpgradeBtnText}>Nâng cấp ngay</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
           {/* Stats Row */}
           <View style={styles.statsRow}>
@@ -385,6 +418,16 @@ export default function ProfileScreen() {
             </View>
           </View>
         </Modal>
+
+        {/* Premium Upgrade Modal */}
+        <PremiumModal
+          visible={premiumModalVisible}
+          onClose={() => setPremiumModalVisible(false)}
+          onSuccess={() => {
+            setPremiumModalVisible(false);
+            loadUserProfile();
+          }}
+        />
       </SafeAreaView>
     </View>
   );
@@ -485,6 +528,64 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#262638',
+  },
+  vipBannerCard: {
+    backgroundColor: '#1c152e',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: '#8b5cf6',
+  },
+  vipBannerContent: {},
+  vipBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  vipCrownBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(139, 92, 246, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  vipBannerTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#ffffff',
+    marginRight: 8,
+  },
+  vipTag: {
+    backgroundColor: '#ec4899',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  vipTagText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  vipBannerSub: {
+    fontSize: 12,
+    color: '#c4b5fd',
+    lineHeight: 18,
+  },
+  vipUpgradeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fbbf24',
+    paddingVertical: 11,
+    borderRadius: 10,
+  },
+  vipUpgradeBtnText: {
+    color: '#0c0c10',
+    fontSize: 14,
+    fontWeight: '800',
   },
   guestLeft: {
     flexDirection: 'row',
