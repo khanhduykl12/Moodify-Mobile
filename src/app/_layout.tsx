@@ -2,6 +2,7 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LogBox, View, StyleSheet } from 'react-native';
 import { PlayerProvider } from '@/context/PlayerContext';
+import { OfflineProvider } from '@/context/OfflineContext';
 import { MiniPlayer } from '@/components/player/MiniPlayer';
 import { FullscreenPlayer } from '@/components/player/FullscreenPlayer';
 
@@ -10,7 +11,8 @@ LogBox.ignoreAllLogs(true);
 
 export default function RootLayout() {
   return (
-    <PlayerProvider>
+    <OfflineProvider>
+      <PlayerProvider>
       <View style={styles.container}>
         <Tabs
           screenOptions={{
@@ -75,7 +77,8 @@ export default function RootLayout() {
         {/* Trình phát nhạc toàn màn hình Fullscreen Player */}
         <FullscreenPlayer />
       </View>
-    </PlayerProvider>
+      </PlayerProvider>
+    </OfflineProvider>
   );
 }
 

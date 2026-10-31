@@ -120,3 +120,36 @@ export type NotificationItem = {
   isRead?: boolean;
 };
 
+
+
+// ============================================================================
+// OFFLINE DOWNLOAD TYPES
+// ============================================================================
+
+export type OfflineStatus = 'QUEUED' | 'DOWNLOADING' | 'DOWNLOADED' | 'FAILED' | 'EXPIRED' | 'REMOVED';
+
+export type OfflineTrack = {
+  trackId: string;
+  track: Track;
+  status: OfflineStatus;
+  localPath: string;
+  downloadedAt?: string;
+  expiresAt: string;
+  fileSize?: number;
+  downloadProgress?: number;
+};
+
+export type OfflineQuota = {
+  used: number;
+  max: number;
+};
+
+export type OfflineVerifyResult = {
+  success: boolean;
+  deviceActive: boolean;
+  isPremium?: boolean;
+  validTrackIds: string[];
+  expiredTrackIds: string[];
+  revokedTrackIds: string[];
+  serverTime?: string;
+};

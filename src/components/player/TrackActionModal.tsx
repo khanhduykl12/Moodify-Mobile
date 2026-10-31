@@ -9,10 +9,12 @@ import {
   Share,
   Alert,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Track, Playlist } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
+import { useOffline } from '@/context/OfflineContext';
 import { PlaylistApi } from '@/services/api';
 
 interface TrackActionModalProps {
@@ -24,6 +26,7 @@ interface TrackActionModalProps {
 export const TrackActionModal: React.FC<TrackActionModalProps> = ({ visible, track, onClose }) => {
   const { playTrack, isLiked, toggleLikeTrack } = usePlayer();
   const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
+  const { isTrackDownloaded, isDownloading, downloadTrack, deleteOfflineTrack, downloadProgressMap } = useOffline();
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loadingPlaylists, setLoadingPlaylists] = useState(false);
 
@@ -31,6 +34,30 @@ export const TrackActionModal: React.FC<TrackActionModalProps> = ({ visible, tra
 
   const trackKey = track.spotifyId || track.id;
   const liked = isLiked(trackKey);
+
+  const downloaded = isTrackDownloaded(track.id);
+  const downloading = isDownloading(track.id);
+  const progress = downloadProgressMap[track.id] || 0;
+
+  const handleToggleOffline = () => {
+    if (downloading) return;
+    if (downloaded) {
+      Alert.alert('Xóa bài hát ngoại tuyến', `Bạn có muốn xóa "${track.name}" khỏi bộ nhớ ngoại tuyến?`, [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: () => {
+            deleteOfflineTrack(track.id);
+            onClose();
+          },
+        },
+      ]);
+    } else {
+      downloadTrack(track);
+      onClose();
+    }
+  };
 
   const handleShare = async () => {
     try {
@@ -116,6 +143,25 @@ export const TrackActionModal: React.FC<TrackActionModalProps> = ({ visible, tra
               />
               <Text style={[styles.actionText, liked && { color: '#ec4899' }]}>
                 {liked ? 'Đã yêu thích bài hát này' : 'Thêm vào Bài hát đã thích'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionItem} onPress={handleToggleOffline}>
+              {downloading ? (
+                <ActivityIndicator size="small" color="#38bdf8" />
+              ) : (
+                <Ionicons
+                  name={downloaded ? 'arrow-down-circle' : 'arrow-down-circle-outline'}
+                  size={24}
+                  color={downloaded ? '#34d399' : '#38bdf8'}
+                />
+              )}
+              <Text style={[styles.actionText, downloaded && { color: '#34d399' }]}>
+                {downloading
+                  ? `Đang tải ngoại tuyến (${progress}%)...`
+                  : downloaded
+                  ? 'Đã tải về máy (Nhấn để xóa)'
+                  : 'Tải về nghe Offline (Mã hóa)'}
               </Text>
             </TouchableOpacity>
 

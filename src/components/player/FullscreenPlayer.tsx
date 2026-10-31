@@ -11,10 +11,12 @@ import {
   Alert,
   FlatList,
   Share,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { usePlayer } from '@/context/PlayerContext';
+import { useOffline } from '@/context/OfflineContext';
 import { PlaylistApi } from '@/services/api';
 import { Playlist } from '@/types';
 
@@ -120,6 +122,25 @@ export const FullscreenPlayer: React.FC = () => {
   const [showSleepTimerModal, setShowSleepTimerModal] = useState(false);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loadingPlaylists, setLoadingPlaylists] = useState(false);
+  const { isTrackDownloaded, isDownloading, downloadTrack, deleteOfflineTrack } = useOffline();
+  const isDownloadedCurrent = currentTrack ? isTrackDownloaded(currentTrack.id) : false;
+  const isDownloadingCurrent = currentTrack ? isDownloading(currentTrack.id) : false;
+
+  const handleOfflineToggle = () => {
+    if (!currentTrack || isDownloadingCurrent) return;
+    if (isDownloadedCurrent) {
+      Alert.alert('Xóa bài hát ngoại tuyến', `Bạn có muốn gỡ "${currentTrack.name}" khỏi bộ nhớ ngoại tuyến?`, [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: () => deleteOfflineTrack(currentTrack.id),
+        },
+      ]);
+    } else {
+      downloadTrack(currentTrack);
+    }
+  };
 
   const lyricsScrollRef = useRef<any>(null);
 
@@ -274,13 +295,27 @@ export const FullscreenPlayer: React.FC = () => {
                 </Text>
               </View>
 
-              <TouchableOpacity onPress={() => toggleLikeTrack(currentTrack)} style={styles.likeBtn}>
-                <Ionicons
-                  name={liked ? 'heart' : 'heart-outline'}
-                  size={28}
-                  color={liked ? '#ec4899' : '#ffffff'}
-                />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <TouchableOpacity onPress={handleOfflineToggle} style={styles.likeBtn} activeOpacity={0.7}>
+                  {isDownloadingCurrent ? (
+                    <ActivityIndicator size="small" color="#38bdf8" />
+                  ) : (
+                    <Ionicons
+                      name={isDownloadedCurrent ? 'arrow-down-circle' : 'arrow-down-circle-outline'}
+                      size={28}
+                      color={isDownloadedCurrent ? '#34d399' : '#9ca3af'}
+                    />
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={() => toggleLikeTrack(currentTrack)} style={styles.likeBtn}>
+                  <Ionicons
+                    name={liked ? 'heart' : 'heart-outline'}
+                    size={28}
+                    color={liked ? '#ec4899' : '#ffffff'}
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Progress Bar (Scrubbable) */}

@@ -4,11 +4,12 @@ import { WebView } from 'react-native-webview';
 import { Track } from '@/types';
 import { API_BASE_URL } from '@/constants/config';
 import { UserLibraryApi } from '@/services/api';
+import { OfflineLicenseValidator } from '@/services/offline/OfflineLicenseValidator';
 
 type PlayerContextType = {
   currentTrack: Track | null;
   isPlaying: boolean;
-  playTrack: (track: Track, newPlaylist?: Track[]) => void;
+  playTrack: (track: Track, newPlaylist?: Track[]) => void | Promise<void>;
   togglePlayPause: () => void;
   isLoadingAudio: boolean;
   currentTime: number;
@@ -237,7 +238,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const playTrack = (track: Track, newPlaylist?: Track[]) => {
+  const playTrack = async (track: Track, newPlaylist?: Track[]) => {
     setIsLoadingAudio(true);
     setCurrentTrack(track);
 
@@ -247,7 +248,21 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setPlaylist([track]);
     }
 
-    let audioUri = track.previewUrl;
+    let audioUri: string | null = null;
+    try {
+      if (track.id) {
+        const offlineCheck = await OfflineLicenseValidator.validate(track.id);
+        if (offlineCheck.isValid && offlineCheck.tempPlaybackUri) {
+          audioUri = offlineCheck.tempPlaybackUri;
+          console.log(`[Player] Phát nhạc OFFLINE từ bộ nhớ thiết bị: ${audioUri}`);
+        }
+      }
+    } catch (e) {
+      console.warn('[Player] Kiểm tra offline thất bại, fallback sang online:', e);
+    }
+    if (!audioUri) {
+      audioUri = track.previewUrl;
+    }
     if (!audioUri && track.id) {
       audioUri = `${API_BASE_URL}/tracks/${track.id}/stream`;
     }

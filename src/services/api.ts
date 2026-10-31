@@ -12,6 +12,9 @@ import {
   SubscriptionPackage,
   CheckoutResult,
   NotificationItem,
+  OfflineVerifyResult,
+  OfflineStatus,
+  OfflineQuota,
 } from '../types';
 
 export const apiClient = axios.create({
@@ -444,3 +447,79 @@ export const NotificationApi = {
 };
 
 
+
+
+export const OfflineApi = {
+  requestDownload: async (payload: {
+    trackId: string;
+    deviceUuid: string;
+    deviceName?: string;
+    platform?: string;
+  }): Promise<{
+    success: boolean;
+    downloadToken: string;
+    downloadUrl: string;
+    encryptionKey: string;
+    expiresAt: string;
+    track: Track;
+    quota: { used: number; max: number };
+  }> => {
+    const res = await apiClient.post('/offline/request-download', payload);
+    return res.data;
+  },
+
+  confirmDownload: async (payload: {
+    downloadToken: string;
+    fileHash?: string;
+    fileSize?: number;
+    localPath?: string;
+  }): Promise<{ success: boolean; message: string; trackId: string }> => {
+    const res = await apiClient.post('/offline/confirm-download', payload);
+    return res.data;
+  },
+
+  verifyLicenses: async (payload: {
+    deviceUuid: string;
+    trackIds: string[];
+  }): Promise<OfflineVerifyResult> => {
+    const res = await apiClient.post('/offline/verify-license', payload);
+    return res.data;
+  },
+
+  removeDownload: async (deviceUuid: string, trackId: string): Promise<void> => {
+    await apiClient.delete('/offline/remove', {
+      params: { deviceUuid, trackId },
+    });
+  },
+
+  getMyDownloads: async (deviceUuid: string): Promise<{
+    tracks: Array<{
+      trackId: string;
+      status: OfflineStatus;
+      localPath: string;
+      downloadedAt: string;
+      expiresAt: string;
+      track: Track;
+    }>;
+    quota: OfflineQuota;
+    isPremium: boolean;
+    subscriptionExpiresAt: string;
+  }> => {
+    const res = await apiClient.get('/offline/my-downloads', {
+      params: { deviceUuid },
+    });
+    return res.data;
+  },
+
+  renewAll: async (deviceUuid: string): Promise<{
+    success: boolean;
+    renewedCount: number;
+    newExpiresAt: string;
+    message: string;
+  }> => {
+    const res = await apiClient.post('/offline/renew-all', null, {
+      params: { deviceUuid },
+    });
+    return res.data;
+  },
+};

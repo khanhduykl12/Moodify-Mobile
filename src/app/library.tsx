@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   View,
   Text,
   TouchableOpacity,
   FlatList,
+  ScrollView,
   Image,
   Modal,
   TextInput,
@@ -15,10 +16,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { PlaylistApi, TrackApi, UserLibraryApi, AlbumApi } from '@/services/api';
-import { Playlist, Track, Album } from '@/types';
+import { Playlist, Track, Album, OfflineTrack } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
+import { useOffline } from '@/context/OfflineContext';
 import { TrackActionModal } from '@/components/player/TrackActionModal';
 import { AlbumDetailModal } from '@/components/album/AlbumDetailModal';
+
+type LibraryItem =
+  | { type: 'playlist'; playlist: Playlist }
+  | { type: 'album'; album: Album }
+  | { type: 'offline'; offline: OfflineTrack };
 
 const DEFAULT_PLAYLISTS: Playlist[] = [
   {
@@ -61,6 +68,7 @@ function formatDuration(ms?: number): string {
 
 export default function LibraryScreen() {
   const { playTrack, currentTrack, isPlaying } = usePlayer();
+  const { offlineTracks, deleteOfflineTrack, refreshOfflineTracks } = useOffline();
   const [filter, setFilter] = useState('all');
   const [playlists, setPlaylists] = useState<Playlist[]>(DEFAULT_PLAYLISTS);
   const [favoriteAlbums, setFavoriteAlbums] = useState<Album[]>([]);
@@ -94,6 +102,7 @@ export default function LibraryScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchLibraryData();
+      refreshOfflineTracks();
     }, [])
   );
 
@@ -205,6 +214,28 @@ export default function LibraryScreen() {
     ]);
   };
 
+  const libraryItems: LibraryItem[] = useMemo(() => {
+    if (filter === 'downloaded') {
+      return offlineTracks.map((o) => ({ type: 'offline' as const, offline: o }));
+    }
+    if (filter === 'playlists') {
+      return playlists.map((p) => ({ type: 'playlist' as const, playlist: p }));
+    }
+    if (filter === 'albums') {
+      return favoriteAlbums.map((a) => ({ type: 'album' as const, album: a }));
+    }
+    return [
+      ...playlists.map((p) => ({ type: 'playlist' as const, playlist: p })),
+      ...favoriteAlbums.map((a) => ({ type: 'album' as const, album: a })),
+    ];
+  }, [filter, offlineTracks, playlists, favoriteAlbums]);
+
+  const totalOfflineBytes = useMemo(() => {
+    return offlineTracks.reduce((acc, t) => acc + (t.fileSize || 3.5 * 1024 * 1024), 0);
+  }, [offlineTracks]);
+
+  const totalOfflineMB = (totalOfflineBytes / (1024 * 1024)).toFixed(1);
+
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -225,45 +256,75 @@ export default function LibraryScreen() {
         </View>
 
         {/* Filter Pills */}
-        <View style={styles.filterRow}>
-          {['all', 'playlists', 'albums', 'downloaded'].map((item) => {
-            const labels: Record<string, string> = {
-              all: 'Tất cả',
-              playlists: 'Danh sách phát',
-              albums: 'Album yêu thích',
-              downloaded: 'Đã tải xuống',
-            };
-            const active = filter === item;
-            return (
-              <TouchableOpacity
-                key={item}
-                style={[styles.filterChip, active && styles.filterChipActive]}
-                onPress={() => setFilter(item)}
-              >
-                <Text style={[styles.filterText, active && styles.filterTextActive]}>
-                  {labels[item]}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+        <View style={{ marginBottom: 16 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
+          >
+            {['all', 'playlists', 'albums', 'downloaded'].map((item) => {
+              const labels: Record<string, string> = {
+                all: 'Tất cả',
+                playlists: 'Danh sách phát',
+                albums: 'Album yêu thích',
+                downloaded: 'Đã tải xuống',
+              };
+              const active = filter === item;
+              return (
+                <TouchableOpacity
+                  key={item}
+                  style={[styles.filterChip, active && styles.filterChipActive]}
+                  onPress={() => setFilter(item)}
+                >
+                  <Text style={[styles.filterText, active && styles.filterTextActive]}>
+                    {labels[item]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
 
         {/* Unified Library List */}
-        <FlatList
-          data={
-            filter === 'playlists'
-              ? playlists.map((p) => ({ type: 'playlist' as const, playlist: p }))
-              : filter === 'albums'
-              ? favoriteAlbums.map((a) => ({ type: 'album' as const, album: a }))
-              : [
-                  ...playlists.map((p) => ({ type: 'playlist' as const, playlist: p })),
-                  ...favoriteAlbums.map((a) => ({ type: 'album' as const, album: a })),
-                ]
+        <FlatList<LibraryItem>
+          data={libraryItems}
+          keyExtractor={(item) =>
+            item.type === 'playlist'
+              ? item.playlist.id
+              : item.type === 'album'
+              ? `album_${item.album.id}`
+              : `offline_${item.offline.trackId}`
           }
-          keyExtractor={(item) => (item.type === 'playlist' ? item.playlist.id : `album_${item.album.id}`)}
           contentContainerStyle={styles.listContent}
+          ListHeaderComponent={
+            filter === 'downloaded' && offlineTracks.length > 0 ? (
+              <View style={styles.offlineHeaderCard}>
+                <View style={styles.offlineHeaderTop}>
+                  <View style={styles.offlineBadge}>
+                    <Ionicons name="shield-checkmark" size={12} color="#10b981" style={{ marginRight: 4 }} />
+                    <Text style={styles.offlineBadgeText}>AES-256 CTR</Text>
+                  </View>
+                  <Text style={styles.offlineSizeText}>{totalOfflineMB} MB đã lưu</Text>
+                </View>
+                <Text style={styles.offlineHeaderTitle}>Kho Nhạc Ngoại Tuyến</Text>
+                <Text style={styles.offlineHeaderSubtitle}>
+                  {offlineTracks.length} bài hát đã mã hóa phần cứng • Sẵn sàng nghe khi mất mạng
+                </Text>
+              </View>
+            ) : undefined
+          }
           ListEmptyComponent={
-            filter === 'albums' ? (
+            filter === 'downloaded' ? (
+              <View style={styles.offlineEmptyContainer}>
+                <View style={styles.offlineEmptyIconBox}>
+                  <Ionicons name="cloud-offline-outline" size={34} color="#8b5cf6" />
+                </View>
+                <Text style={styles.offlineEmptyTitle}>Chưa có bài hát ngoại tuyến</Text>
+                <Text style={styles.offlineEmptySubtitle}>
+                  Chạm vào biểu tượng ⬇️ trên bất kỳ bài hát nào để mã hóa và lưu trữ an toàn trong máy.
+                </Text>
+              </View>
+            ) : filter === 'albums' ? (
               <View style={{ paddingVertical: 40, alignItems: 'center' }}>
                 <Ionicons name="disc-outline" size={48} color="#4b5563" style={{ marginBottom: 10 }} />
                 <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '700' }}>
@@ -276,6 +337,74 @@ export default function LibraryScreen() {
             ) : undefined
           }
           renderItem={({ item }) => {
+            if (item.type === 'offline') {
+              const ot = item.offline;
+              const trk = ot.track;
+              const isPlayingThis = currentTrack?.id === trk.id && isPlaying;
+              const isExpired = ot.status === 'EXPIRED';
+
+              return (
+                <TouchableOpacity
+                  style={[styles.playlistItem, isPlayingThis && styles.offlineItemPlaying]}
+                  onPress={() => {
+                    playTrack(trk, offlineTracks.map((o) => o.track));
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.coverWrapper}>
+                    {trk.imageUrl ? (
+                      <Image source={{ uri: trk.imageUrl }} style={styles.cover} />
+                    ) : (
+                      <View style={styles.placeholderCover}>
+                        <Ionicons name="musical-note" size={26} color="#8b5cf6" />
+                      </View>
+                    )}
+                    {isPlayingThis && (
+                      <View style={styles.playingIndicatorOverlay}>
+                        <Ionicons name="volume-high" size={12} color="#8b5cf6" />
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.info}>
+                    <Text
+                      style={[styles.playlistName, isPlayingThis && { color: '#8b5cf6' }]}
+                      numberOfLines={1}
+                    >
+                      {trk.name}
+                    </Text>
+                    <View style={styles.offlineMetaRow}>
+                      <Text style={styles.playlistMeta} numberOfLines={1}>
+                        {trk.artistName}
+                      </Text>
+                      <View style={styles.metaDot} />
+                      <View style={[styles.statusPill, isExpired && styles.statusPillExpired]}>
+                        <Text style={[styles.statusPillText, isExpired && styles.statusPillTextExpired]}>
+                          {isExpired ? 'Hết hạn' : 'Ngoại tuyến'}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.offlineDeleteBtn}
+                    onPress={() => {
+                      Alert.alert('Quản lý bài hát ngoại tuyến', `Bạn có muốn xóa bài hát "${trk.name}" khỏi bộ nhớ thiết bị?`, [
+                        { text: 'Hủy', style: 'cancel' },
+                        {
+                          text: 'Xóa khỏi máy',
+                          style: 'destructive',
+                          onPress: () => deleteOfflineTrack(trk.id),
+                        },
+                      ]);
+                    }}
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#6b7280" />
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              );
+            }
+
             if (item.type === 'album') {
               const alb = item.album;
               return (
@@ -621,7 +750,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 16,
     gap: 8,
-    marginBottom: 16,
   },
   filterChip: {
     paddingHorizontal: 14,
@@ -920,5 +1048,140 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontSize: 12,
     marginLeft: 8,
+  },
+  offlineHeaderCard: {
+    backgroundColor: '#12121a',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.2)',
+  },
+  offlineHeaderTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  offlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  offlineBadgeText: {
+    color: '#10b981',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  offlineSizeText: {
+    color: '#9ca3af',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  offlineHeaderTitle: {
+    color: '#ffffff',
+    fontSize: 17,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  offlineHeaderSubtitle: {
+    color: '#6b7280',
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  offlineItemPlaying: {
+    backgroundColor: 'rgba(139, 92, 246, 0.08)',
+    borderColor: 'rgba(139, 92, 246, 0.3)',
+    borderWidth: 1,
+  },
+  coverWrapper: {
+    position: 'relative',
+  },
+  playingIndicatorOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  offlineMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 6,
+  },
+  metaDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#4b5563',
+  },
+  statusPill: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+    borderWidth: 0.5,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  statusPillExpired: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  statusPillText: {
+    color: '#10b981',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  statusPillTextExpired: {
+    color: '#ef4444',
+  },
+  offlineDeleteBtn: {
+    padding: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  offlineEmptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+  },
+  offlineEmptyIconBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#161622',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#262638',
+  },
+  offlineEmptyTitle: {
+    color: '#ffffff',
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  offlineEmptySubtitle: {
+    color: '#6b7280',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });
