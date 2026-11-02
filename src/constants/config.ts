@@ -5,10 +5,10 @@ import Constants from "expo-constants";
 
 // Tự động nhận diện IP máy tính dev đang chạy Expo qua Wi-Fi hiện tại
 const debuggerHost = Constants.expoConfig?.hostUri;
-const detectedIp = debuggerHost ? debuggerHost.split(":")[0] : "10.0.0.131";
+const detectedIp = debuggerHost ? debuggerHost.split(':')[0] : '172.20.10.4';
 
-export const CURRENT_LAN_IP = detectedIp || "10.0.0.131";
-export const DEV_PORT = "8080";
+export const CURRENT_LAN_IP = detectedIp || '172.20.10.4';
+export const DEV_PORT = '8088';
 
 const configuredApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
 const defaultApiBaseUrl = debuggerHost

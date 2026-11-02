@@ -5,12 +5,13 @@ import { router } from 'expo-router';
 import { Track, Entitlements, AdReason } from '@/types';
 import { API_BASE_URL } from '@/constants/config';
 import { Storage } from '@/services/storage';
+import { OfflineLicenseValidator } from '@/services/offline/OfflineLicenseValidator';
 import { UserLibraryApi, SubscriptionApi, AdsApi } from '@/services/api';
 
 type PlayerContextType = {
   currentTrack: Track | null;
   isPlaying: boolean;
-  playTrack: (track: Track, newPlaylist?: Track[]) => void;
+  playTrack: (track: Track, newPlaylist?: Track[]) => void | Promise<void>;
   togglePlayPause: () => void;
   isLoadingAudio: boolean;
   currentTime: number;
@@ -434,7 +435,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const executePlayTrack = (track: Track, newPlaylist?: Track[]) => {
+  const executePlayTrack = async (track: Track, newPlaylist?: Track[]) => {
     setIsLoadingAudio(true);
     setCurrentTrack(track);
 
@@ -454,7 +455,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     // Always start playback through the backend. The backend resolves the
     // stored audio path and redirects to the configured audio server if needed.
-    const audioUri = `${API_BASE_URL}/tracks/${encodeURIComponent(trackIdentifier)}/stream`;
+    let audioUri = `${API_BASE_URL}/tracks/${encodeURIComponent(trackIdentifier)}/stream`;
+    try {
+      const offlineCheck = await OfflineLicenseValidator.validate(track.id);
+      if (offlineCheck.isValid && offlineCheck.tempPlaybackUri) {
+        audioUri = offlineCheck.tempPlaybackUri;
+      }
+    } catch (error) {
+      console.warn('[Player] Offline playback unavailable, falling back to streaming:', error);
+    }
 
     console.log(`[Player] Đang phát audio qua backend: ${audioUri}`);
 
