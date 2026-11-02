@@ -59,16 +59,16 @@ class KaraokePitchModule : Module() {
 
     AsyncFunction("start") {
       val context = appContext.reactContext
-        ?: throw CodedException("MIC_UNAVAILABLE", "Không lấy được context ứng dụng.")
+        ?: throw CodedException("MIC_UNAVAILABLE", "Không lấy được context ứng dụng.", null)
       if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-        throw CodedException("MIC_PERMISSION", "Chưa cấp quyền micro cho ứng dụng.")
+        throw CodedException("MIC_PERMISSION", "Chưa cấp quyền micro cho ứng dụng.", null)
       }
       val previous = captureThread
       if (previous != null && previous.isAlive) {
         previous.join(1500)
       }
       if (state != CaptureState.IDLE || (captureThread?.isAlive == true)) {
-        throw CodedException("ALREADY_RECORDING", "Bản thu pitch trước vẫn đang chạy, hãy thử lại.")
+        throw CodedException("ALREADY_RECORDING", "Bản thu pitch trước vẫn đang chạy, hãy thử lại.", null)
       }
       resetCapture()
       state = CaptureState.RECORDING
