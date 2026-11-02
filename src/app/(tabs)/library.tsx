@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -10,49 +10,29 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { PlaylistApi, TrackApi, UserLibraryApi, AlbumApi } from '@/services/api';
+import { PlaylistApi, UserLibraryApi, AlbumApi } from '@/services/api';
+import { Storage } from '@/services/storage';
 import { Playlist, Track, Album } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
 import { TrackActionModal } from '@/components/player/TrackActionModal';
 import { AlbumDetailModal } from '@/components/album/AlbumDetailModal';
 
-const DEFAULT_PLAYLISTS: Playlist[] = [
-  {
-    id: 'fav',
-    name: 'Bài hát đã thích',
-    description: 'Danh sách bài hát yêu thích của bạn',
-    coverUrl: null,
-    trackCount: 0,
-  },
-  {
-    id: 'p1',
-    name: 'Giai điệu thư giãn cuối tuần',
-    description: 'Chill, Acoustic, Ballad êm dịu',
-    coverUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500',
-    trackCount: 24,
-  },
-  {
-    id: 'p2',
-    name: 'Rap Việt On Repeat',
-    description: 'Flow đỉnh cao, underground',
-    coverUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=500',
-    trackCount: 18,
-  },
-  {
-    id: 'p3',
-    name: 'Năng Lượng Làm Việc',
-    description: 'Deep focus, lofi, tập trung',
-    coverUrl: 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=500',
-    trackCount: 30,
-  },
-];
+// Danh sách ảo ghim đầu tiên — thống kê từ API "bài hát đã thích" của user trên backend
+const FAV_PLAYLIST: Playlist = {
+  id: 'fav',
+  name: 'Bài hát đã thích',
+  description: 'Danh sách bài hát yêu thích của bạn',
+  coverUrl: null,
+  trackCount: 0,
+};
 
 function formatDuration(ms?: number): string {
-  if (!ms) return '3:20';
+  if (!ms) return '0:00';
   const totalSecs = Math.floor(ms / 1000);
   const mins = Math.floor(totalSecs / 60);
   const secs = totalSecs % 60;
@@ -62,8 +42,14 @@ function formatDuration(ms?: number): string {
 export default function LibraryScreen() {
   const { playTrack, currentTrack, isPlaying } = usePlayer();
   const [filter, setFilter] = useState('all');
-  const [playlists, setPlaylists] = useState<Playlist[]>(DEFAULT_PLAYLISTS);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [favoriteAlbums, setFavoriteAlbums] = useState<Album[]>([]);
+  const [likedTracks, setLikedTracks] = useState<Track[]>([]);
+  const [likedCount, setLikedCount] = useState(0);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userInitial, setUserInitial] = useState('K');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedAlbumId, setSelectedAlbumId] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -75,20 +61,54 @@ export default function LibraryScreen() {
   const [loadingTracks, setLoadingTracks] = useState(false);
   const [actionTrack, setActionTrack] = useState<Track | null>(null);
 
-  const fetchLibraryData = () => {
-    PlaylistApi.getMyPlaylists()
-      .then((data) => {
-        if (data && data.length > 0) {
-          setPlaylists([DEFAULT_PLAYLISTS[0], ...data]);
-        }
-      })
-      .catch(() => {});
+  // Danh sách hiển thị: ghim "Bài hát đã thích" (số liệu thật từ API) + playlist thật của user
+  const playlistItems = useMemo(
+    () => [{ ...FAV_PLAYLIST, trackCount: likedCount }, ...playlists],
+    [playlists, likedCount]
+  );
 
-    AlbumApi.getUserFavoriteAlbums()
-      .then((albums) => {
-        setFavoriteAlbums(albums || []);
-      })
-      .catch(() => {});
+  const fetchLibraryData = async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+
+    try {
+      const token = await Storage.getAccessToken();
+      if (!token) {
+        setIsLoggedIn(false);
+        setPlaylists([]);
+        setFavoriteAlbums([]);
+        setLikedTracks([]);
+        setLikedCount(0);
+        return;
+      }
+      setIsLoggedIn(true);
+
+      // Ảnh avatar hiển thị chữ cái đầu từ thông tin user đã lưu
+      const storedUser = await Storage.getItem('moodify_user_info');
+      if (storedUser) {
+        try {
+          const info = JSON.parse(storedUser);
+          const name = info?.fullName || info?.fullname || info?.username || 'K';
+          setUserInitial(name.charAt(0).toUpperCase());
+        } catch {}
+      }
+
+      const [plData, favAlbums, likedPage] = await Promise.all([
+        PlaylistApi.getMyPlaylists(),
+        AlbumApi.getUserFavoriteAlbums(),
+        UserLibraryApi.getLikedTracksPage(0, 100),
+      ]);
+      setPlaylists(plData || []);
+      setFavoriteAlbums(favAlbums || []);
+      setLikedTracks(likedPage.tracks);
+      setLikedCount(likedPage.totalElements);
+    } catch (err) {
+      console.warn('Lỗi tải thư viện:', err);
+      Alert.alert('Lỗi', 'Không tải được thư viện. Vui lòng kéo xuống để thử lại.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
   useFocusEffect(
@@ -129,15 +149,7 @@ export default function LibraryScreen() {
       setPlaylists([created, ...playlists]);
       Alert.alert('Thành công', `Đã tạo danh sách phát "${created.name}"`);
     } catch {
-      const localCreated: Playlist = {
-        id: `p_${Date.now()}`,
-        name: newTitle.trim(),
-        description: newDesc.trim() || 'Danh sách phát mới tạo',
-        coverUrl: null,
-        trackCount: 0,
-      };
-      setPlaylists([localCreated, ...playlists]);
-      Alert.alert('Thành công', `Đã tạo danh sách phát "${localCreated.name}"`);
+      Alert.alert('Lỗi', 'Không tạo được danh sách phát. Vui lòng thử lại.');
     }
 
     setNewTitle('');
@@ -150,25 +162,20 @@ export default function LibraryScreen() {
     setLoadingTracks(true);
     try {
       if (item.id === 'fav') {
-        const liked = await UserLibraryApi.getLikedTracks();
-        if (liked && liked.length > 0) {
-          setPlaylistTracks(liked);
+        // "Bài hát đã thích" — dữ liệu thật từ thư viện user trên backend
+        if (likedTracks.length > 0) {
+          setPlaylistTracks(likedTracks);
         } else {
-          const sample = await TrackApi.getTracks(0, 15);
-          setPlaylistTracks(sample.content || []);
+          const page = await UserLibraryApi.getLikedTracksPage(0, 100);
+          setPlaylistTracks(page.tracks);
         }
       } else {
         const pl = await PlaylistApi.getPlaylistById(item.id);
-        if (pl.tracks && pl.tracks.length > 0) {
-          setPlaylistTracks(pl.tracks);
-        } else {
-          const sample = await TrackApi.getTracks(0, 10);
-          setPlaylistTracks(sample.content || []);
-        }
+        setPlaylistTracks(pl.tracks || []);
       }
     } catch {
-      const sample = await TrackApi.getTracks(0, 10);
-      setPlaylistTracks(sample.content || []);
+      setPlaylistTracks([]);
+      Alert.alert('Lỗi', 'Không tải được danh sách bài hát. Vui lòng thử lại.');
     } finally {
       setLoadingTracks(false);
     }
@@ -205,6 +212,42 @@ export default function LibraryScreen() {
     ]);
   };
 
+  const renderEmptyState = () => {
+    const emptyConfig: Record<
+      string,
+      { icon: React.ComponentProps<typeof Ionicons>['name']; title: string; subtitle: string }
+    > = {
+      all: {
+        icon: 'library-outline',
+        title: 'Thư viện trống',
+        subtitle: 'Tạo danh sách phát hoặc lưu album yêu thích để bắt đầu!',
+      },
+      playlists: {
+        icon: 'musical-notes',
+        title: 'Chưa có danh sách phát',
+        subtitle: 'Nhấn dấu + ở góc trên để tạo danh sách phát đầu tiên của bạn!',
+      },
+      albums: {
+        icon: 'disc-outline',
+        title: 'Chưa có album yêu thích',
+        subtitle: 'Khám phá các album tại Trang chủ và nhấn biểu tượng trái tim để lưu lại đây!',
+      },
+      downloaded: {
+        icon: 'download-outline',
+        title: 'Chưa có bài hát nào được tải xuống',
+        subtitle: 'Tính năng tải nhạc nghe offline sẽ sớm ra mắt.',
+      },
+    };
+    const cfg = emptyConfig[filter] || emptyConfig.all;
+    return (
+      <View style={styles.emptyBox}>
+        <Ionicons name={cfg.icon} size={48} color="#4b5563" style={{ marginBottom: 10 }} />
+        <Text style={styles.emptyTitle}>{cfg.title}</Text>
+        <Text style={styles.emptySubtitle}>{cfg.subtitle}</Text>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -212,13 +255,20 @@ export default function LibraryScreen() {
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>K</Text>
+              {isLoggedIn ? (
+                <Text style={styles.avatarText}>{userInitial}</Text>
+              ) : (
+                <Ionicons name="person" size={16} color="#ffffff" />
+              )}
             </View>
             <Text style={styles.headerTitle}>Thư viện</Text>
           </View>
 
           <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => setIsModalOpen(true)}>
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={() => (isLoggedIn ? setIsModalOpen(true) : router.push('/auth'))}
+            >
               <Ionicons name="add" size={28} color="#ffffff" />
             </TouchableOpacity>
           </View>
@@ -249,103 +299,124 @@ export default function LibraryScreen() {
         </View>
 
         {/* Unified Library List */}
-        <FlatList
-          data={
-            filter === 'playlists'
-              ? playlists.map((p) => ({ type: 'playlist' as const, playlist: p }))
-              : filter === 'albums'
-              ? favoriteAlbums.map((a) => ({ type: 'album' as const, album: a }))
-              : [
-                  ...playlists.map((p) => ({ type: 'playlist' as const, playlist: p })),
-                  ...favoriteAlbums.map((a) => ({ type: 'album' as const, album: a })),
-                ]
-          }
-          keyExtractor={(item) => (item.type === 'playlist' ? item.playlist.id : `album_${item.album.id}`)}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            filter === 'albums' ? (
-              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-                <Ionicons name="disc-outline" size={48} color="#4b5563" style={{ marginBottom: 10 }} />
-                <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '700' }}>
-                  Chưa có album yêu thích
-                </Text>
-                <Text style={{ color: '#9ca3af', fontSize: 13, marginTop: 4, textAlign: 'center' }}>
-                  Khám phá các album tại Trang chủ và nhấn biểu tượng trái tim để lưu lại đây!
-                </Text>
-              </View>
-            ) : undefined
-          }
-          renderItem={({ item }) => {
-            if (item.type === 'album') {
-              const alb = item.album;
+        {loading ? (
+          <View style={styles.centerBox}>
+            <ActivityIndicator size="large" color="#8b5cf6" />
+            <Text style={styles.centerBoxText}>Đang tải thư viện...</Text>
+          </View>
+        ) : !isLoggedIn ? (
+          <View style={styles.guestCard}>
+            <View style={styles.guestAvatar}>
+              <Ionicons name="person" size={26} color="#9ca3af" />
+            </View>
+            <Text style={styles.guestTitle}>Khách vãng lai</Text>
+            <Text style={styles.guestSubtitle}>
+              Đăng nhập để đồng bộ thư viện, playlist và bài hát đã thích của bạn
+            </Text>
+            <TouchableOpacity
+              style={styles.guestLoginBtn}
+              onPress={() => router.push('/auth')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.guestLoginText}>Đăng nhập / Đăng ký</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <FlatList
+            data={
+              filter === 'playlists'
+                ? playlistItems.map((p) => ({ type: 'playlist' as const, playlist: p }))
+                : filter === 'albums'
+                ? favoriteAlbums.map((a) => ({ type: 'album' as const, album: a }))
+                : filter === 'downloaded'
+                ? []
+                : [
+                    ...playlistItems.map((p) => ({ type: 'playlist' as const, playlist: p })),
+                    ...favoriteAlbums.map((a) => ({ type: 'album' as const, album: a })),
+                  ]
+            }
+            keyExtractor={(item) => (item.type === 'playlist' ? item.playlist.id : `album_${item.album.id}`)}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => fetchLibraryData(true)}
+                tintColor="#8b5cf6"
+              />
+            }
+            ListEmptyComponent={renderEmptyState}
+            renderItem={({ item }) => {
+              if (item.type === 'album') {
+                const alb = item.album;
+                return (
+                  <TouchableOpacity
+                    style={styles.playlistItem}
+                    onPress={() => setSelectedAlbumId(alb.id)}
+                    activeOpacity={0.7}
+                  >
+                    {alb.coverUrl ? (
+                      <Image source={{ uri: alb.coverUrl }} style={styles.cover} />
+                    ) : (
+                      <View style={styles.placeholderCover}>
+                        <Ionicons name="disc" size={26} color="#8b5cf6" />
+                      </View>
+                    )}
+
+                    <View style={styles.info}>
+                      <Text style={styles.playlistName} numberOfLines={1}>
+                        {alb.title}
+                      </Text>
+                      <Text style={styles.playlistMeta} numberOfLines={1}>
+                        Album • {alb.authorName || 'Nhiều nghệ sĩ'} • {alb.trackCount || 0} bài hát
+                      </Text>
+                    </View>
+
+                    <View style={styles.albumFavBadge}>
+                      <Ionicons name="heart" size={16} color="#ec4899" />
+                    </View>
+                  </TouchableOpacity>
+                );
+              }
+
+              const pl = item.playlist;
+              const isFav = pl.id === 'fav';
               return (
                 <TouchableOpacity
                   style={styles.playlistItem}
-                  onPress={() => setSelectedAlbumId(alb.id)}
+                  onPress={() => handleOpenPlaylist(pl)}
                   activeOpacity={0.7}
                 >
-                  {alb.coverUrl ? (
-                    <Image source={{ uri: alb.coverUrl }} style={styles.cover} />
+                  {isFav ? (
+                    <View style={styles.favCover}>
+                      <Ionicons name="heart" size={26} color="#ffffff" />
+                    </View>
+                  ) : pl.coverUrl ? (
+                    <Image source={{ uri: pl.coverUrl }} style={styles.cover} />
                   ) : (
                     <View style={styles.placeholderCover}>
-                      <Ionicons name="disc" size={26} color="#8b5cf6" />
+                      <Ionicons name="musical-notes" size={26} color="#8b5cf6" />
                     </View>
                   )}
 
                   <View style={styles.info}>
                     <Text style={styles.playlistName} numberOfLines={1}>
-                      {alb.title}
+                      {pl.name}
                     </Text>
                     <Text style={styles.playlistMeta} numberOfLines={1}>
-                      Album • {alb.authorName || 'Nhiều nghệ sĩ'} • {alb.trackCount || 0} bài hát
+                      Danh sách phát • {pl.trackCount || 0} bài hát
                     </Text>
                   </View>
 
-                  <View style={styles.albumFavBadge}>
-                    <Ionicons name="heart" size={16} color="#ec4899" />
-                  </View>
+                  {isFav && (
+                    <View style={styles.pinBadge}>
+                      <Ionicons name="pin" size={14} color="#8b5cf6" />
+                    </View>
+                  )}
                 </TouchableOpacity>
               );
-            }
-
-            const pl = item.playlist;
-            const isFav = pl.id === 'fav';
-            return (
-              <TouchableOpacity
-                style={styles.playlistItem}
-                onPress={() => handleOpenPlaylist(pl)}
-                activeOpacity={0.7}
-              >
-                {isFav ? (
-                  <View style={styles.favCover}>
-                    <Ionicons name="heart" size={26} color="#ffffff" />
-                  </View>
-                ) : pl.coverUrl ? (
-                  <Image source={{ uri: pl.coverUrl }} style={styles.cover} />
-                ) : (
-                  <View style={styles.placeholderCover}>
-                    <Ionicons name="musical-notes" size={26} color="#8b5cf6" />
-                  </View>
-                )}
-
-                <View style={styles.info}>
-                  <Text style={styles.playlistName} numberOfLines={1}>
-                    {pl.name}
-                  </Text>
-                  <Text style={styles.playlistMeta} numberOfLines={1}>
-                    Danh sách phát • {pl.trackCount || 0} bài hát
-                  </Text>
-                </View>
-
-                {isFav && (
-                  <View style={styles.pinBadge}>
-                    <Ionicons name="pin" size={14} color="#8b5cf6" />
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          }}
-        />
+            }}
+          />
+        )}
 
         {/* Create Playlist Modal */}
         <Modal
@@ -418,7 +489,7 @@ export default function LibraryScreen() {
                     {selectedPlaylist.name}
                   </Text>
 
-                  {selectedPlaylist.id !== 'fav' && !selectedPlaylist.id.startsWith('p') ? (
+                  {selectedPlaylist.id !== 'fav' ? (
                     <TouchableOpacity
                       onPress={() => handleDeletePlaylist(selectedPlaylist.id)}
                       style={styles.detailBackBtn}
@@ -485,6 +556,17 @@ export default function LibraryScreen() {
                     data={playlistTracks}
                     keyExtractor={(t, i) => `${t.id}_${i}`}
                     contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 110 }}
+                    ListEmptyComponent={
+                      <View style={styles.emptyBox}>
+                        <Ionicons name="musical-notes" size={40} color="#4b5563" style={{ marginBottom: 10 }} />
+                        <Text style={styles.emptyTitle}>
+                          {selectedPlaylist?.id === 'fav' ? 'Chưa có bài hát đã thích' : 'Playlist đang trống'}
+                        </Text>
+                        <Text style={styles.emptySubtitle}>
+                          Nhấn trái tim ở trình phát để lưu bài hát vào đây.
+                        </Text>
+                      </View>
+                    }
                     renderItem={({ item, index }) => {
                       const isThisPlaying = currentTrack?.id === item.id && isPlaying;
                       return (
@@ -530,7 +612,7 @@ export default function LibraryScreen() {
                             <Ionicons name="ellipsis-vertical" size={16} color="#9ca3af" />
                           </TouchableOpacity>
 
-                          {selectedPlaylist?.id !== 'fav' && !selectedPlaylist?.id.startsWith('p') && (
+                          {selectedPlaylist?.id !== 'fav' && (
                             <TouchableOpacity
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                               style={{ paddingLeft: 10 }}
@@ -695,6 +777,78 @@ const styles = StyleSheet.create({
   },
   albumFavBadge: {
     padding: 6,
+  },
+
+  // Loading / Empty / Guest states
+  centerBox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  centerBoxText: {
+    color: '#9ca3af',
+    fontSize: 14,
+  },
+  emptyBox: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  emptyTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    color: '#9ca3af',
+    fontSize: 13,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  guestCard: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 24,
+    backgroundColor: '#161622',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#262638',
+    padding: 24,
+  },
+  guestAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#26263a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  guestTitle: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  guestSubtitle: {
+    color: '#9ca3af',
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 18,
+  },
+  guestLoginBtn: {
+    backgroundColor: '#8b5cf6',
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+  },
+  guestLoginText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
   },
 
   // Create Modal

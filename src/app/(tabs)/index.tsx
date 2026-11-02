@@ -34,15 +34,6 @@ const FILTER_CHIPS = [
   { id: 'remix', label: 'Remix/EDM' },
 ];
 
-// Danh mục Tâm trạng (Moodify Signature)
-const MOOD_CARDS = [
-  { id: 'vpop', name: 'V-Pop Thịnh Hành', icon: '🔥', color: '#881337', gradient: '#fb7185' },
-  { id: 'hiphop', name: 'Năng Lượng & Flow', icon: '⚡', color: '#78350f', gradient: '#fbbf24' },
-  { id: 'indie', name: 'Acoustic & Chill', icon: '🌙', color: '#581c87', gradient: '#c084fc' },
-  { id: 'remix', name: 'Sôi Động / Remix', icon: '🎉', color: '#0369a1', gradient: '#38bdf8' },
-  { id: 'all', name: 'Tập Trung / Deep', icon: '🎧', color: '#134e4a', gradient: '#2dd4bf' },
-];
-
 export default function HomeScreen() {
   const { playTrack, currentTrack, isPlaying } = usePlayer();
   const [selectedFilter, setSelectedFilter] = useState('all');
@@ -113,8 +104,12 @@ export default function HomeScreen() {
   // 6 bài hát gần đây cho ô lưới Quick Access (2 cột x 3 hàng)
   const quickAccessTracks = useMemo(() => playableTracks.slice(0, 6), [playableTracks]);
 
-  // Bài hát tiêu điểm Spotlight (bài hit có audio MP3 đỉnh nhất)
-  const spotlightTrack = useMemo(() => playableTracks[0] || null, [playableTracks]);
+  // Bài hát tiêu điểm Spotlight (chọn ngẫu nhiên mỗi lần tải dữ liệu)
+  const spotlightTrack = useMemo(() => {
+    if (playableTracks.length === 0) return null;
+    const randomIndex = Math.floor(Math.random() * playableTracks.length);
+    return playableTracks[randomIndex];
+  }, [playableTracks]);
 
   // Danh sách nghệ sĩ
   const featuredArtists = useMemo(() => {
@@ -135,13 +130,6 @@ export default function HomeScreen() {
         {/* ========================================================================= */}
         <View style={styles.topBar}>
           <View style={styles.topBarLeft}>
-            <TouchableOpacity
-              style={styles.avatar}
-              activeOpacity={0.8}
-              onPress={() => router.push('/profile')}
-            >
-              <Text style={styles.avatarText}>K</Text>
-            </TouchableOpacity>
             <View style={styles.brandRow}>
               <Image
                 source={require('@/assets/images/moodify-logo.png')}
@@ -287,9 +275,6 @@ export default function HomeScreen() {
 
                     {/* Meta info */}
                     <View style={styles.spotlightMeta}>
-                      <View style={styles.spotlightBadge}>
-                        <Text style={styles.spotlightBadgeText}>🔥 TIÊU ĐIỂM MOODIFY</Text>
-                      </View>
                       <Text style={styles.spotlightTitle} numberOfLines={1}>
                         {spotlightTrack.name}
                       </Text>
@@ -312,28 +297,7 @@ export default function HomeScreen() {
             )}
 
             {/* ===================================================================== */}
-            {/* 5. MOOD / VIBE CARDS (Khám phá theo cảm xúc)                         */}
-            {/* ===================================================================== */}
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Cảm xúc âm nhạc</Text>
-            </View>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.moodScroll}>
-              {MOOD_CARDS.map((mood) => (
-                <TouchableOpacity
-                  key={mood.id}
-                  style={[styles.moodCard, { backgroundColor: mood.color }]}
-                  onPress={() => setSelectedFilter(mood.id)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.moodIcon}>{mood.icon}</Text>
-                  <Text style={styles.moodName}>{mood.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* ===================================================================== */}
-            {/* 6. CAROUSEL: Giai điệu thịnh hành                                    */}
+            {/* 5. CAROUSEL: Giai điệu thịnh hành                                    */}
             {/* ===================================================================== */}
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Giai điệu thịnh hành</Text>
@@ -641,20 +605,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#8b5cf6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  avatarText: {
-    color: '#ffffff',
-    fontWeight: '800',
-    fontSize: 15,
-  },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -835,22 +785,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
-  spotlightBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(139, 92, 246, 0.3)',
-    borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.5)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-    marginBottom: 6,
-  },
-  spotlightBadgeText: {
-    color: '#c4b5fd',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
   spotlightTitle: {
     color: '#ffffff',
     fontSize: 18,
@@ -896,28 +830,6 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     fontSize: 13,
     fontWeight: '600',
-  },
-
-  // 5. Mood Cards
-  moodScroll: {
-    paddingHorizontal: 16,
-    gap: 10,
-    paddingBottom: 16,
-  },
-  moodCard: {
-    width: 140,
-    height: 70,
-    borderRadius: 10,
-    padding: 10,
-    justifyContent: 'space-between',
-  },
-  moodIcon: {
-    fontSize: 18,
-  },
-  moodName: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '700',
   },
 
   // 6. Track Carousel

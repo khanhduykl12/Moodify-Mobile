@@ -10,3 +10,5 @@ if not exist "node_modules\" (
 )
 call npx expo start -c
 pause
+
+
