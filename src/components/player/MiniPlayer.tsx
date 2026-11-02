@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import { usePlayer } from '@/context/PlayerContext';
 import { Ionicons } from '@expo/vector-icons';
+import { AdBanner } from './AdBanner';
 
 export const MiniPlayer: React.FC = () => {
   const {
@@ -14,7 +15,18 @@ export const MiniPlayer: React.FC = () => {
     openPlayerModal,
     isLiked,
     toggleLikeTrack,
+    isAdPlaying,
   } = usePlayer();
+
+  // Đang phát quảng cáo: hiển thị banner QC thay cho card bài hát
+  // (currentTrack có thể chưa tồn tại nếu QC phát trước bài đầu tiên)
+  if (isAdPlaying) {
+    return (
+      <View style={styles.container}>
+        <AdBanner variant="mini" />
+      </View>
+    );
+  }
 
   if (!currentTrack) return null;
 

@@ -14,11 +14,13 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { usePlayer } from '@/context/PlayerContext';
 import { useOffline } from '@/context/OfflineContext';
 import { PlaylistApi } from '@/services/api';
 import { Playlist } from '@/types';
+import { AdBanner } from './AdBanner';
 
 const { width, height } = Dimensions.get('window');
 
@@ -115,12 +117,21 @@ export const FullscreenPlayer: React.FC = () => {
     sleepTimerMinutes,
     sleepTimerRemaining,
     setSleepTimer,
+    isAdPlaying,
   } = usePlayer();
 
   const [showLyrics, setShowLyrics] = useState(false);
   const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
   const [showSleepTimerModal, setShowSleepTimerModal] = useState(false);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const router = useRouter();
+
+  // Entry Karaoke: hát bài đang phát trên sân khấu karaoke (bài chưa chuẩn bị sẽ được báo ở màn karaoke)
+  const handleOpenKaraoke = () => {
+    if (!currentTrack) return;
+    closePlayerModal();
+    router.push({ pathname: '/karaoke/solo', params: { songId: currentTrack.id } });
+  };
   const [loadingPlaylists, setLoadingPlaylists] = useState(false);
   const { isTrackDownloaded, isDownloading, downloadTrack, deleteOfflineTrack } = useOffline();
   const isDownloadedCurrent = currentTrack ? isTrackDownloaded(currentTrack.id) : false;
@@ -185,6 +196,47 @@ export const FullscreenPlayer: React.FC = () => {
       Alert.alert('Thông báo', 'Không thể thêm bài hát vào danh sách phát (có thể bài hát đã có trong playlist).');
     }
   };
+
+  if (!currentTrack && !isAdPlaying) return null;
+
+  // Quảng cáo phát trước bài đầu tiên (chưa có currentTrack) → màn hình chỉ có QC
+  if (isAdPlaying && !currentTrack) {
+    return (
+      <Modal
+        visible={isPlayerModalVisible}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={closePlayerModal}
+      >
+        <View style={styles.container}>
+          <SafeAreaView style={styles.safeArea}>
+            <View style={styles.topHeader}>
+              <TouchableOpacity onPress={closePlayerModal} style={styles.headerBtn}>
+                <Ionicons name="chevron-down" size={28} color="#ffffff" />
+              </TouchableOpacity>
+              <View style={styles.headerTitleBox}>
+                <Text style={styles.headerSuperTitle}>MOODIFY</Text>
+                <Text style={styles.headerSubTitle}>Quảng cáo</Text>
+              </View>
+              <View style={{ width: 40 }} />
+            </View>
+
+            <View style={styles.adOnlyWrap}>
+              <AdBanner variant="full" />
+              <TouchableOpacity onPress={togglePlayPause} style={styles.mainPlayBtn} activeOpacity={0.8}>
+                <Ionicons
+                  name={isPlaying ? 'pause' : 'play'}
+                  size={36}
+                  color="#000000"
+                  style={{ marginLeft: isPlaying ? 0 : 3 }}
+                />
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
+    );
+  }
 
   if (!currentTrack) return null;
 
@@ -271,6 +323,9 @@ export const FullscreenPlayer: React.FC = () => {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Banner quảng cáo khi Ad Engine đang phát QC giữa các bài hát */}
+          {isAdPlaying && <AdBanner variant="full" />}
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
             {/* Artwork Card */}
@@ -374,7 +429,7 @@ export const FullscreenPlayer: React.FC = () => {
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={playNext}
+                onPress={() => playNext()}
                 style={styles.controlIconBtn}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
@@ -417,7 +472,9 @@ export const FullscreenPlayer: React.FC = () => {
             <View style={styles.lyricsCard}>
               <View style={styles.lyricsHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Ionicons name="mic" size={18} color="#a78bfa" style={{ marginRight: 6 }} />
+                  <TouchableOpacity onPress={handleOpenKaraoke} hitSlop={6} style={{ marginRight: 6 }}>
+                    <Ionicons name="mic" size={18} color="#a78bfa" />
+                  </TouchableOpacity>
                   <Text style={styles.lyricsTitle}>Lời bài hát thời gian thực</Text>
                 </View>
                 <TouchableOpacity onPress={() => setShowLyrics(!showLyrics)}>
@@ -624,6 +681,12 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+  },
+  adOnlyWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingBottom: 60,
   },
   topHeader: {
     flexDirection: 'row',

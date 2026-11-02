@@ -16,6 +16,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Alert } from 'react-native';
 import { TrackApi, AlbumApi, NotificationApi } from '@/services/api';
+import { API_BASE_URL } from '@/constants/config';
 import { Track, Album } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
 import { TrackActionModal } from '@/components/player/TrackActionModal';
@@ -24,6 +25,7 @@ import { ArtistDetailModal } from '@/components/artist/ArtistDetailModal';
 import { NotificationModal } from '@/components/notification/NotificationModal';
 
 const { width } = Dimensions.get('window');
+const HOME_LOAD_ERROR_MESSAGE = `Không tải được danh sách bài hát từ máy chủ (${API_BASE_URL}). Kiểm tra backend và kết nối mạng, rồi thử tải lại.`;
 
 // Danh mục Vibe / Thể loại
 const FILTER_CHIPS = [
@@ -34,20 +36,12 @@ const FILTER_CHIPS = [
   { id: 'remix', label: 'Remix/EDM' },
 ];
 
-// Danh mục Tâm trạng (Moodify Signature)
-const MOOD_CARDS = [
-  { id: 'vpop', name: 'V-Pop Thịnh Hành', icon: '🔥', color: '#881337', gradient: '#fb7185' },
-  { id: 'hiphop', name: 'Năng Lượng & Flow', icon: '⚡', color: '#78350f', gradient: '#fbbf24' },
-  { id: 'indie', name: 'Acoustic & Chill', icon: '🌙', color: '#581c87', gradient: '#c084fc' },
-  { id: 'remix', name: 'Sôi Động / Remix', icon: '🎉', color: '#0369a1', gradient: '#38bdf8' },
-  { id: 'all', name: 'Tập Trung / Deep', icon: '🎧', color: '#134e4a', gradient: '#2dd4bf' },
-];
-
 export default function HomeScreen() {
   const { playTrack, currentTrack, isPlaying } = usePlayer();
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [allTracks, setAllTracks] = useState<Track[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [selectedAlbumId, setSelectedAlbumId] = useState<number | null>(null);
@@ -58,19 +52,32 @@ export default function HomeScreen() {
 
   // Tải danh sách bài hát và album từ Backend
   const loadData = async () => {
+    setLoadError(null);
     try {
-      const [trackData, albumData] = await Promise.all([
+      const [trackResult, albumResult] = await Promise.allSettled([
         TrackApi.getTracks(0, 50),
         AlbumApi.getPublicAlbums('', 0, 10),
       ]);
-      setAllTracks(trackData.content || []);
-      setAlbums(albumData.content || []);
+
+      if (trackResult.status === 'fulfilled') {
+        setAllTracks(trackResult.value.content || []);
+      } else {
+        console.warn('Lỗi tải danh sách bài hát:', trackResult.reason);
+        setLoadError(HOME_LOAD_ERROR_MESSAGE);
+      }
+
+      if (albumResult.status === 'fulfilled') {
+        setAlbums(albumResult.value.content || []);
+      } else {
+        console.warn('Lỗi tải danh sách album:', albumResult.reason);
+      }
 
       NotificationApi.getMyNotifications(1)
         .then((res) => setUnreadCount(res.unreadCount))
         .catch(() => {});
     } catch (error) {
       console.warn('Lỗi tải dữ liệu trang chủ:', error);
+      setLoadError(HOME_LOAD_ERROR_MESSAGE);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -113,8 +120,12 @@ export default function HomeScreen() {
   // 6 bài hát gần đây cho ô lưới Quick Access (2 cột x 3 hàng)
   const quickAccessTracks = useMemo(() => playableTracks.slice(0, 6), [playableTracks]);
 
-  // Bài hát tiêu điểm Spotlight (bài hit có audio MP3 đỉnh nhất)
-  const spotlightTrack = useMemo(() => playableTracks[0] || null, [playableTracks]);
+  // Bài hát tiêu điểm Spotlight (chọn ngẫu nhiên mỗi lần tải dữ liệu)
+  const spotlightTrack = useMemo(() => {
+    if (playableTracks.length === 0) return null;
+    const randomIndex = Math.floor(Math.random() * playableTracks.length);
+    return playableTracks[randomIndex];
+  }, [playableTracks]);
 
   // Danh sách nghệ sĩ
   const featuredArtists = useMemo(() => {
@@ -135,13 +146,6 @@ export default function HomeScreen() {
         {/* ========================================================================= */}
         <View style={styles.topBar}>
           <View style={styles.topBarLeft}>
-            <TouchableOpacity
-              style={styles.avatar}
-              activeOpacity={0.8}
-              onPress={() => router.push('/profile')}
-            >
-              <Text style={styles.avatarText}>K</Text>
-            </TouchableOpacity>
             <View style={styles.brandRow}>
               <Image
                 source={require('@/assets/images/moodify-logo.png')}
@@ -221,6 +225,19 @@ export default function HomeScreen() {
             contentContainerStyle={styles.scrollContent}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#8b5cf6" />}
           >
+            {loadError ? (
+              <View style={styles.loadErrorNotice}>
+                <Text style={styles.loadErrorText}>{loadError}</Text>
+                <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
+                  <Text style={styles.retryButtonText}>Tải lại</Text>
+                </TouchableOpacity>
+              </View>
+            ) : allTracks.length === 0 ? (
+              <View style={styles.emptyNotice}>
+                <Text style={styles.emptyNoticeText}>Chưa có bài hát nào để hiển thị.</Text>
+              </View>
+            ) : null}
+
             {/* ===================================================================== */}
             {/* 3. QUICK ACCESS GRID (2 Cột x 3 Hàng Spotify style)                  */}
             {/* ===================================================================== */}
@@ -287,9 +304,6 @@ export default function HomeScreen() {
 
                     {/* Meta info */}
                     <View style={styles.spotlightMeta}>
-                      <View style={styles.spotlightBadge}>
-                        <Text style={styles.spotlightBadgeText}>🔥 TIÊU ĐIỂM MOODIFY</Text>
-                      </View>
                       <Text style={styles.spotlightTitle} numberOfLines={1}>
                         {spotlightTrack.name}
                       </Text>
@@ -312,28 +326,27 @@ export default function HomeScreen() {
             )}
 
             {/* ===================================================================== */}
-            {/* 5. MOOD / VIBE CARDS (Khám phá theo cảm xúc)                         */}
+            {/* 4.5 BANNER: Moodify Karaoke                                          */}
             {/* ===================================================================== */}
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Cảm xúc âm nhạc</Text>
-            </View>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.moodScroll}>
-              {MOOD_CARDS.map((mood) => (
-                <TouchableOpacity
-                  key={mood.id}
-                  style={[styles.moodCard, { backgroundColor: mood.color }]}
-                  onPress={() => setSelectedFilter(mood.id)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.moodIcon}>{mood.icon}</Text>
-                  <Text style={styles.moodName}>{mood.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            <TouchableOpacity
+              style={styles.karaokeBanner}
+              activeOpacity={0.85}
+              onPress={() => router.push('/karaoke')}
+            >
+              <View style={styles.karaokeBannerIcon}>
+                <Ionicons name="mic" size={24} color="#c4b5fd" />
+              </View>
+              <View style={styles.karaokeBannerCopy}>
+                <Text style={styles.karaokeBannerTitle}>Moodify Karaoke</Text>
+                <Text style={styles.karaokeBannerSubtitle}>
+                  Hát một mình hoặc mở phòng hát cùng bạn bè
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#6b7280" />
+            </TouchableOpacity>
 
             {/* ===================================================================== */}
-            {/* 6. CAROUSEL: Giai điệu thịnh hành                                    */}
+            {/* 5. CAROUSEL: Giai điệu thịnh hành                                    */}
             {/* ===================================================================== */}
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Giai điệu thịnh hành</Text>
@@ -569,6 +582,46 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
   },
+  loadErrorNotice: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: '#2b1720',
+    borderWidth: 1,
+    borderColor: '#7f1d3a',
+  },
+  loadErrorText: {
+    color: '#fecdd3',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    backgroundColor: '#8b5cf6',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  emptyNotice: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: '#171720',
+  },
+  emptyNoticeText: {
+    color: '#9ca3af',
+    fontSize: 13,
+  },
 
   // Album section styles
   albumBadge: {
@@ -640,20 +693,6 @@ const styles = StyleSheet.create({
   topBarLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#8b5cf6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  avatarText: {
-    color: '#ffffff',
-    fontWeight: '800',
-    fontSize: 15,
   },
   brandRow: {
     flexDirection: 'row',
@@ -835,22 +874,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
-  spotlightBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(139, 92, 246, 0.3)',
-    borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.5)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-    marginBottom: 6,
-  },
-  spotlightBadgeText: {
-    color: '#c4b5fd',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
   spotlightTitle: {
     color: '#ffffff',
     fontSize: 18,
@@ -887,6 +910,39 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginTop: 6,
   },
+  karaokeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#1f1f2e',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.45)',
+    padding: 14,
+    marginHorizontal: 16,
+    marginTop: 10,
+  },
+  karaokeBannerIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(139, 92, 246, 0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  karaokeBannerCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  karaokeBannerTitle: {
+    color: '#f9fafb',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  karaokeBannerSubtitle: {
+    color: '#9ca3af',
+    fontSize: 12,
+  },
   sectionTitle: {
     color: '#ffffff',
     fontSize: 19,
@@ -896,28 +952,6 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     fontSize: 13,
     fontWeight: '600',
-  },
-
-  // 5. Mood Cards
-  moodScroll: {
-    paddingHorizontal: 16,
-    gap: 10,
-    paddingBottom: 16,
-  },
-  moodCard: {
-    width: 140,
-    height: 70,
-    borderRadius: 10,
-    padding: 10,
-    justifyContent: 'space-between',
-  },
-  moodIcon: {
-    fontSize: 18,
-  },
-  moodName: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '700',
   },
 
   // 6. Track Carousel
