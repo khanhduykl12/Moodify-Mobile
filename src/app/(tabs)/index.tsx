@@ -16,6 +16,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Alert } from 'react-native';
 import { TrackApi, AlbumApi, NotificationApi } from '@/services/api';
+import { API_BASE_URL } from '@/constants/config';
 import { Track, Album } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
 import { TrackActionModal } from '@/components/player/TrackActionModal';
@@ -24,6 +25,7 @@ import { ArtistDetailModal } from '@/components/artist/ArtistDetailModal';
 import { NotificationModal } from '@/components/notification/NotificationModal';
 
 const { width } = Dimensions.get('window');
+const HOME_LOAD_ERROR_MESSAGE = `Không tải được danh sách bài hát từ máy chủ (${API_BASE_URL}). Kiểm tra backend và kết nối mạng, rồi thử tải lại.`;
 
 // Danh mục Vibe / Thể loại
 const FILTER_CHIPS = [
@@ -39,6 +41,7 @@ export default function HomeScreen() {
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [allTracks, setAllTracks] = useState<Track[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [selectedAlbumId, setSelectedAlbumId] = useState<number | null>(null);
@@ -49,19 +52,32 @@ export default function HomeScreen() {
 
   // Tải danh sách bài hát và album từ Backend
   const loadData = async () => {
+    setLoadError(null);
     try {
-      const [trackData, albumData] = await Promise.all([
+      const [trackResult, albumResult] = await Promise.allSettled([
         TrackApi.getTracks(0, 50),
         AlbumApi.getPublicAlbums('', 0, 10),
       ]);
-      setAllTracks(trackData.content || []);
-      setAlbums(albumData.content || []);
+
+      if (trackResult.status === 'fulfilled') {
+        setAllTracks(trackResult.value.content || []);
+      } else {
+        console.warn('Lỗi tải danh sách bài hát:', trackResult.reason);
+        setLoadError(HOME_LOAD_ERROR_MESSAGE);
+      }
+
+      if (albumResult.status === 'fulfilled') {
+        setAlbums(albumResult.value.content || []);
+      } else {
+        console.warn('Lỗi tải danh sách album:', albumResult.reason);
+      }
 
       NotificationApi.getMyNotifications(1)
         .then((res) => setUnreadCount(res.unreadCount))
         .catch(() => {});
     } catch (error) {
       console.warn('Lỗi tải dữ liệu trang chủ:', error);
+      setLoadError(HOME_LOAD_ERROR_MESSAGE);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -209,6 +225,19 @@ export default function HomeScreen() {
             contentContainerStyle={styles.scrollContent}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#8b5cf6" />}
           >
+            {loadError ? (
+              <View style={styles.loadErrorNotice}>
+                <Text style={styles.loadErrorText}>{loadError}</Text>
+                <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
+                  <Text style={styles.retryButtonText}>Tải lại</Text>
+                </TouchableOpacity>
+              </View>
+            ) : allTracks.length === 0 ? (
+              <View style={styles.emptyNotice}>
+                <Text style={styles.emptyNoticeText}>Chưa có bài hát nào để hiển thị.</Text>
+              </View>
+            ) : null}
+
             {/* ===================================================================== */}
             {/* 3. QUICK ACCESS GRID (2 Cột x 3 Hàng Spotify style)                  */}
             {/* ===================================================================== */}
@@ -295,6 +324,26 @@ export default function HomeScreen() {
                 </View>
               </View>
             )}
+
+            {/* ===================================================================== */}
+            {/* 4.5 BANNER: Moodify Karaoke                                          */}
+            {/* ===================================================================== */}
+            <TouchableOpacity
+              style={styles.karaokeBanner}
+              activeOpacity={0.85}
+              onPress={() => router.push('/karaoke')}
+            >
+              <View style={styles.karaokeBannerIcon}>
+                <Ionicons name="mic" size={24} color="#c4b5fd" />
+              </View>
+              <View style={styles.karaokeBannerCopy}>
+                <Text style={styles.karaokeBannerTitle}>Moodify Karaoke</Text>
+                <Text style={styles.karaokeBannerSubtitle}>
+                  Hát một mình hoặc mở phòng hát cùng bạn bè
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#6b7280" />
+            </TouchableOpacity>
 
             {/* ===================================================================== */}
             {/* 5. CAROUSEL: Giai điệu thịnh hành                                    */}
@@ -532,6 +581,46 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     marginTop: 12,
     fontSize: 14,
+  },
+  loadErrorNotice: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: '#2b1720',
+    borderWidth: 1,
+    borderColor: '#7f1d3a',
+  },
+  loadErrorText: {
+    color: '#fecdd3',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    backgroundColor: '#8b5cf6',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  emptyNotice: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: '#171720',
+  },
+  emptyNoticeText: {
+    color: '#9ca3af',
+    fontSize: 13,
   },
 
   // Album section styles
@@ -820,6 +909,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 12,
     marginTop: 6,
+  },
+  karaokeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#1f1f2e',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.45)',
+    padding: 14,
+    marginHorizontal: 16,
+    marginTop: 10,
+  },
+  karaokeBannerIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(139, 92, 246, 0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  karaokeBannerCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  karaokeBannerTitle: {
+    color: '#f9fafb',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  karaokeBannerSubtitle: {
+    color: '#9ca3af',
+    fontSize: 12,
   },
   sectionTitle: {
     color: '#ffffff',

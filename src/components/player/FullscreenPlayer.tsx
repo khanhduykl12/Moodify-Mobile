@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { usePlayer } from '@/context/PlayerContext';
 import { useOffline } from '@/context/OfflineContext';
@@ -123,6 +124,14 @@ export const FullscreenPlayer: React.FC = () => {
   const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
   const [showSleepTimerModal, setShowSleepTimerModal] = useState(false);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const router = useRouter();
+
+  // Entry Karaoke: hát bài đang phát trên sân khấu karaoke (bài chưa chuẩn bị sẽ được báo ở màn karaoke)
+  const handleOpenKaraoke = () => {
+    if (!currentTrack) return;
+    closePlayerModal();
+    router.push({ pathname: '/karaoke/solo', params: { songId: currentTrack.id } });
+  };
   const [loadingPlaylists, setLoadingPlaylists] = useState(false);
   const { isTrackDownloaded, isDownloading, downloadTrack, deleteOfflineTrack } = useOffline();
   const isDownloadedCurrent = currentTrack ? isTrackDownloaded(currentTrack.id) : false;
@@ -463,7 +472,9 @@ export const FullscreenPlayer: React.FC = () => {
             <View style={styles.lyricsCard}>
               <View style={styles.lyricsHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Ionicons name="mic" size={18} color="#a78bfa" style={{ marginRight: 6 }} />
+                  <TouchableOpacity onPress={handleOpenKaraoke} hitSlop={6} style={{ marginRight: 6 }}>
+                    <Ionicons name="mic" size={18} color="#a78bfa" />
+                  </TouchableOpacity>
                   <Text style={styles.lyricsTitle}>Lời bài hát thời gian thực</Text>
                 </View>
                 <TouchableOpacity onPress={() => setShowLyrics(!showLyrics)}>

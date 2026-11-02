@@ -15,12 +15,24 @@ import {
   SubscriptionPackage,
   CheckoutResult,
   PaymentStatusResult,
-  ActiveAd,
   NotificationItem,
   MoodRecommendationResponse,
   OfflineVerifyResult,
   OfflineStatus,
   OfflineQuota,
+  KaraokePitchFeatures,
+  KaraokeRoomCreated,
+  KaraokeRoomDetail,
+  KaraokeRoomPitchSegment,
+  KaraokeRoomQueueItem,
+  KaraokeRoomScoreSession,
+  KaraokeRoomSummary,
+  KaraokeRoomVisibility,
+  KaraokeScoreResponse,
+  KaraokeSessionResponse,
+  KaraokeTrackPageResponse,
+  KaraokeTrackSummary,
+  KaraokeVoiceTicket,
 } from '../types';
 
 export const apiClient = axios.create({
@@ -483,30 +495,6 @@ export const SubscriptionApi = {
   },
 };
 
-export const AdsApi = {
-  // Danh sách chiến dịch quảng cáo đang hiệu lực (API public của backend)
-  getActiveAds: async (): Promise<ActiveAd[]> => {
-    try {
-      const res = await apiClient.get<ActiveAd[]>('/ads/active');
-      const rows = Array.isArray(res.data) ? res.data : [];
-      return rows.filter(
-        (ad) => ad && typeof ad.id === 'string' && ad.id.length > 0 && typeof ad.audioUrl === 'string' && ad.audioUrl.length > 0
-      );
-    } catch {
-      return [];
-    }
-  },
-
-  // Ghi nhận lượt nghe quảng cáo — lỗi không ảnh hưởng trải nghiệm nghe
-  recordAdImpression: async (adId: string): Promise<void> => {
-    try {
-      await apiClient.post(`/ads/${adId}/impression`);
-    } catch {
-      // Bỏ qua
-    }
-  },
-};
-
 export const SearchHistoryApi = {
   getHistory: async (page = 0, size = 15): Promise<string[]> => {
     try {
@@ -642,4 +630,159 @@ export const OfflineApi = {
     });
     return res.data;
   },
+};
+
+// ============================================================================
+// KARAOKE API — đồng bộ endpoint với web (lib/api-client.ts)
+// Mọi call đều cần Bearer token (interceptor tự gắn) + X-Device-Uuid
+// ============================================================================
+
+export class KaraokeRoomApiError extends Error {
+  status: number;
+  code: string;
+  constructor(message: string, status: number, code: string) {
+    super(message);
+    this.name = 'KaraokeRoomApiError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
+// Parse lỗi trả về của backend room API (code dạng ROOM_*, PLAYBACK_*...)
+const extractKaraokeErrorCode = (message: string): string | null => {
+  const match = message.match(/(?:ROOM|QUEUE|TRACK|AUTH|USER|PLAYBACK|KARAOKE|VOICE)_[A-Z_]+/);
+  return match ? match[0] : null;
+};
+
+const karaokeRoomRequest = async <T>(
+  path: string,
+  options: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown } = {}
+): Promise<T> => {
+  try {
+    const deviceUuid = await getDeviceUuid();
+    const res = await apiClient.request<T>({
+      url: path,
+      method: options.method || 'GET',
+      ...(options.body !== undefined ? { data: options.body } : {}),
+      headers: { 'X-Device-Uuid': deviceUuid },
+    });
+    return res.data;
+  } catch (error) {
+    if (error instanceof KaraokeRoomApiError) throw error;
+    const axiosError = error as AxiosError<{ message?: string; detail?: string; error?: string; code?: string }>;
+    const status = axiosError.response?.status || 0;
+    const body = axiosError.response?.data || null;
+    const message =
+      body?.detail || body?.message || body?.error || `Yêu cầu phòng Karaoke thất bại (HTTP ${status}).`;
+    const code = body?.code || extractKaraokeErrorCode(message) || 'ROOM_REQUEST_FAILED';
+    throw new KaraokeRoomApiError(message, status, code);
+  }
+};
+
+export const KaraokeApi = {
+  // ---- Kho bài & chấm điểm solo ----
+  getTracks: async (page = 0, size = 20, query?: string): Promise<KaraokeTrackPageResponse> => {
+    const res = await apiClient.get<KaraokeTrackPageResponse>('/karaoke/tracks', {
+      params: { page, size, ...(query?.trim() ? { query: query.trim() } : {}) },
+      timeout: 20000,
+    });
+    return res.data;
+  },
+
+  getTrackById: async (songId: string): Promise<KaraokeTrackSummary> => {
+    const res = await apiClient.get<KaraokeTrackSummary>(`/karaoke/tracks/${encodeURIComponent(songId)}`);
+    return res.data;
+  },
+
+  startSession: async (songId: string): Promise<KaraokeSessionResponse> => {
+    const res = await apiClient.post<KaraokeSessionResponse>(
+      `/karaoke/tracks/${encodeURIComponent(songId)}/sessions`
+    );
+    return res.data;
+  },
+
+  submitPitchFeatures: async (sessionId: string, features: KaraokePitchFeatures): Promise<KaraokeScoreResponse> => {
+    const res = await apiClient.post<KaraokeScoreResponse>(
+      `/karaoke/sessions/${encodeURIComponent(sessionId)}/score/features`,
+      features
+    );
+    return res.data;
+  },
+
+  // ---- Phòng hát ----
+  getRooms: (): Promise<KaraokeRoomSummary[]> => karaokeRoomRequest<KaraokeRoomSummary[]>('/karaoke/rooms'),
+
+  createRoom: (input: { name: string; maxMembers: number; visibility: KaraokeRoomVisibility }): Promise<KaraokeRoomCreated> =>
+    karaokeRoomRequest<KaraokeRoomCreated>('/karaoke/rooms', { method: 'POST', body: input }),
+
+  joinRoom: (roomId: number, inviteCode?: string): Promise<KaraokeRoomDetail> =>
+    karaokeRoomRequest<KaraokeRoomDetail>(`/karaoke/rooms/${roomId}/join`, {
+      method: 'POST',
+      body: inviteCode ? { inviteCode } : {},
+    }),
+
+  getRoom: (roomId: number): Promise<KaraokeRoomDetail> =>
+    karaokeRoomRequest<KaraokeRoomDetail>(`/karaoke/rooms/${roomId}`),
+
+  leaveRoom: (roomId: number): Promise<void> =>
+    karaokeRoomRequest<void>(`/karaoke/rooms/${roomId}/leave`, { method: 'POST' }),
+
+  closeRoom: (roomId: number): Promise<void> =>
+    karaokeRoomRequest<void>(`/karaoke/rooms/${roomId}/close`, { method: 'POST' }),
+
+  addQueueItem: (roomId: number, trackId: string): Promise<KaraokeRoomQueueItem> =>
+    karaokeRoomRequest<KaraokeRoomQueueItem>(`/karaoke/rooms/${roomId}/queue`, {
+      method: 'POST',
+      body: { trackId },
+    }),
+
+  removeQueueItem: (roomId: number, itemId: number): Promise<void> =>
+    karaokeRoomRequest<void>(`/karaoke/rooms/${roomId}/queue/${itemId}`, { method: 'DELETE' }),
+
+  controlPlayback: (
+    roomId: number,
+    command: 'start' | 'pause' | 'resume' | 'skip',
+    expectedVersion: number
+  ): Promise<KaraokeRoomDetail> =>
+    karaokeRoomRequest<KaraokeRoomDetail>(`/karaoke/rooms/${roomId}/playback/${command}`, {
+      method: 'POST',
+      body: { expectedVersion },
+    }),
+
+  createVoiceTicket: (roomId: number): Promise<KaraokeVoiceTicket> =>
+    karaokeRoomRequest<KaraokeVoiceTicket>(`/karaoke/rooms/${roomId}/voice-ticket`, { method: 'POST' }),
+
+  // ---- Điểm nhóm ----
+  startRoomScoreSession: (roomId: number): Promise<KaraokeRoomScoreSession> =>
+    karaokeRoomRequest<KaraokeRoomScoreSession>(`/karaoke/rooms/${roomId}/score-sessions/current`, { method: 'POST' }),
+
+  registerRoomScoreParticipant: (roomId: number, sessionId: string): Promise<KaraokeRoomScoreSession> =>
+    karaokeRoomRequest<KaraokeRoomScoreSession>(
+      `/karaoke/rooms/${roomId}/score-sessions/${encodeURIComponent(sessionId)}/participants/me`,
+      { method: 'POST' }
+    ),
+
+  submitRoomContribution: (input: {
+    roomId: number;
+    sessionId: string;
+    segments: KaraokeRoomPitchSegment[];
+  }): Promise<KaraokeRoomScoreSession> =>
+    karaokeRoomRequest<KaraokeRoomScoreSession>(
+      `/karaoke/rooms/${input.roomId}/score-sessions/${encodeURIComponent(input.sessionId)}/contribution`,
+      { method: 'PUT', body: { segments: input.segments } }
+    ),
+
+  finishRoomScoreSession: (roomId: number, sessionId: string): Promise<KaraokeRoomScoreSession> =>
+    karaokeRoomRequest<KaraokeRoomScoreSession>(
+      `/karaoke/rooms/${roomId}/score-sessions/${encodeURIComponent(sessionId)}/finish`,
+      { method: 'POST' }
+    ),
+
+  getRoomScoreSession: (roomId: number, sessionId: string): Promise<KaraokeRoomScoreSession> =>
+    karaokeRoomRequest<KaraokeRoomScoreSession>(
+      `/karaoke/rooms/${roomId}/score-sessions/${encodeURIComponent(sessionId)}`
+    ),
+
+  // WebSocket realtime state phòng — auth bằng accessToken trong frame đầu tiên
+  getRoomSocketUrl: (): string => `${API_BASE_URL.replace(/^http/, 'ws')}/ws/karaoke`,
 };

@@ -1,12 +1,13 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { Alert } from 'react-native';
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { router } from 'expo-router';
 import { Track, Entitlements, AdReason } from '@/types';
+import { chooseAdAudioAsset } from '@/constants/ad-audio-assets';
 import { API_BASE_URL } from '@/constants/config';
 import { Storage } from '@/services/storage';
 import { OfflineLicenseValidator } from '@/services/offline/OfflineLicenseValidator';
-import { UserLibraryApi, SubscriptionApi, AdsApi } from '@/services/api';
+import { UserLibraryApi, SubscriptionApi } from '@/services/api';
 
 type PlayerContextType = {
   currentTrack: Track | null;
@@ -151,120 +152,15 @@ const recordDailySkip = async (): Promise<number> => {
   return stats.skips;
 };
 
-// File tĩnh (audio quảng cáo...) nằm ngoài /api: http://host:8080/uploads/** — khớp getBackendFileUrl của web
-const BACKEND_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, '');
-
-const resolveBackendFileUrl = (url: string) => {
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${BACKEND_ORIGIN}${url.startsWith('/') ? '' : '/'}${url}`;
-};
-
-const AUDIO_HTML = `
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  </head>
-  <body style="background:transparent;margin:0;padding:0;">
-    <audio id="audio" preload="auto" playsinline></audio>
-    <audio id="ad-audio" preload="auto" playsinline></audio>
-    <script>
-      const audio = document.getElementById('audio');
-      const adAudio = document.getElementById('ad-audio');
-
-      audio.addEventListener('play', () => {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'play' }));
-      });
-      audio.addEventListener('pause', () => {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'pause' }));
-      });
-      audio.addEventListener('ended', () => {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ended' }));
-      });
-      audio.addEventListener('timeupdate', () => {
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'timeupdate',
-          currentTime: audio.currentTime || 0,
-          duration: audio.duration || 0
-        }));
-      });
-      audio.addEventListener('error', (e) => {
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'error',
-          code: audio.error ? audio.error.code : -1
-        }));
-      });
-
-      adAudio.addEventListener('play', () => {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ad_play' }));
-      });
-      adAudio.addEventListener('pause', () => {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ad_pause' }));
-      });
-      adAudio.addEventListener('ended', () => {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ad_ended' }));
-      });
-      adAudio.addEventListener('timeupdate', () => {
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'ad_timeupdate',
-          currentTime: adAudio.currentTime || 0,
-          duration: adAudio.duration || 0
-        }));
-      });
-      adAudio.addEventListener('error', () => {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ad_error' }));
-      });
-
-      window.playSong = function(url) {
-        audio.src = url;
-        audio.play().catch(function(err) {
-          console.warn('Play error:', err);
-        });
-      };
-
-      window.pauseSong = function() {
-        audio.pause();
-      };
-
-      window.resumeSong = function() {
-        audio.play().catch(function(err) {});
-      };
-
-      window.seekSong = function(seconds) {
-        if (isFinite(seconds)) {
-          audio.currentTime = seconds;
-        }
-      };
-
-      window.setVolume = function(vol) {
-        if (isFinite(vol)) {
-          audio.volume = Math.max(0, Math.min(1, vol));
-          adAudio.volume = Math.max(0, Math.min(1, vol));
-        }
-      };
-
-      // ── Kênh phát quảng cáo (tách riêng để không đè bài hát đang phát) ──
-      window.playAdSong = function(url) {
-        adAudio.src = url;
-        adAudio.play().catch(function(err) {
-          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ad_error' }));
-        });
-      };
-
-      window.pauseAdSong = function() {
-        adAudio.pause();
-        adAudio.currentTime = 0;
-      };
-
-      window.resumeAdSong = function() {
-        adAudio.play().catch(function(err) {});
-      };
-    </script>
-  </body>
-</html>
-`;
-
 export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const trackPlayer = useAudioPlayer(null, {
+    updateInterval: 500,
+    preferredForwardBufferDuration: 12,
+  });
+  const trackStatus = useAudioPlayerStatus(trackPlayer);
+  const adPlayer = useAudioPlayer(null, { updateInterval: 500 });
+  const adStatus = useAudioPlayerStatus(adPlayer);
+
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [playlist, setPlaylist] = useState<Track[]>([]);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -287,6 +183,30 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [adTotalDuration, setAdTotalDuration] = useState<number>(0);
   const [currentAdTitle, setCurrentAdTitle] = useState<string | null>(null);
   const [canSkipAd, setCanSkipAd] = useState<boolean>(false);
+
+  const playbackRequestIdRef = useRef(0);
+  const playbackSourceRef = useRef<{
+    requestId: number;
+    streamUri: string;
+    isOffline: boolean;
+    retryCount: number;
+  } | null>(null);
+  const trackHasStartedRef = useRef(false);
+  const trackFinishHandledRef = useRef(false);
+  const adHasStartedRef = useRef(false);
+  const resumeTrackAfterAdRef = useRef(false);
+  const lastTrackErrorRef = useRef<string | null>(null);
+  const lastAdErrorRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    void setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: true,
+      interruptionMode: 'doNotMix',
+    }).catch((error) => {
+      console.warn('[Player] Không thể cấu hình audio session:', error);
+    });
+  }, []);
 
   const sleepTimerRef = useRef<{ minutes: number | null; remaining: number | null }>({
     minutes: null,
@@ -314,9 +234,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setSleepTimerRemaining((prev) => {
         if (prev === null || prev <= 1) {
           // Time expired! Pause music
-          if (webViewRef.current) {
-            webViewRef.current.injectJavaScript('window.pauseSong(); true;');
-          }
+          trackPlayer.pause();
+          adPlayer.pause();
           setIsPlaying(false);
           setSleepTimerMinutes(null);
           return null;
@@ -343,14 +262,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const isPlayingRef = useRef(isPlaying);
   isPlayingRef.current = isPlaying;
 
-  const webViewRef = useRef<WebView | null>(null);
-
   // ── Ad Engine refs ──
   const entitlementsRef = useRef<Entitlements>(FREE_ENTITLEMENTS);
   const isPremiumUserRef = useRef(false);
   const isAdPlayingRef = useRef(false);
   const adSecondsRemainingRef = useRef(0);
-  const activeAdsRef = useRef<{ id: string; title?: string; advertiser?: string; audioUrl: string }[]>([]);
   const lastAdIdRef = useRef<string | null>(null);
   const pendingTrackRef = useRef<{ track: Track; newPlaylist?: Track[] } | null>(null);
   const freeTracksSinceLastAdRef = useRef(0);
@@ -367,13 +283,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       })
       .catch(() => {});
 
-    // Tải entitlements theo gói + danh sách chiến dịch quảng cáo ACTIVE
+    // Tải entitlements theo gói; audio quảng cáo được đóng gói sẵn trong app.
     void loadEntitlements();
-    AdsApi.getActiveAds()
-      .then((ads) => {
-        activeAdsRef.current = ads;
-      })
-      .catch(() => {});
   }, []);
 
   const isLiked = (trackIdOrSpotifyId?: string): boolean => {
@@ -436,7 +347,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const executePlayTrack = async (track: Track, newPlaylist?: Track[]) => {
+    const requestId = ++playbackRequestIdRef.current;
+    trackHasStartedRef.current = false;
+    trackFinishHandledRef.current = false;
+    trackPlayer.pause();
     setIsLoadingAudio(true);
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
     setCurrentTrack(track);
 
     if (newPlaylist && newPlaylist.length > 0) {
@@ -455,77 +373,61 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     // Always start playback through the backend. The backend resolves the
     // stored audio path and redirects to the configured audio server if needed.
-    let audioUri = `${API_BASE_URL}/tracks/${encodeURIComponent(trackIdentifier)}/stream`;
+    const streamUri = `${API_BASE_URL}/tracks/${encodeURIComponent(trackIdentifier)}/stream`;
+    let audioUri = streamUri;
+    let isOffline = false;
     try {
       const offlineCheck = await OfflineLicenseValidator.validate(track.id);
       if (offlineCheck.isValid && offlineCheck.tempPlaybackUri) {
         audioUri = offlineCheck.tempPlaybackUri;
+        isOffline = true;
       }
     } catch (error) {
       console.warn('[Player] Offline playback unavailable, falling back to streaming:', error);
     }
 
-    console.log(`[Player] Đang phát audio qua backend: ${audioUri}`);
+    if (requestId !== playbackRequestIdRef.current) return;
 
-    if (webViewRef.current) {
-      const code = `window.playSong(${JSON.stringify(audioUri)}); true;`;
-      webViewRef.current.injectJavaScript(code);
-    }
-    setIsPlaying(true);
-    setIsLoadingAudio(false);
+    playbackSourceRef.current = {
+      requestId,
+      streamUri,
+      isOffline,
+      retryCount: 0,
+    };
+
+    console.log(`[Player] Đang phát audio qua backend: ${audioUri}`);
+    trackPlayer.volume = volume;
+    trackPlayer.replace({ uri: audioUri });
+    trackPlayer.play();
   };
 
   // ── Ad Engine: phát quảng cáo, kết thúc, bỏ qua ──
   const playAdAudio = () => {
-    const campaigns = activeAdsRef.current;
-    if (campaigns.length === 0) {
-      // Bộ nhớ chưa có chiến dịch → thử tải lại một lần
-      // (admin có thể vừa tạo/bật chiến dịch mới, không cần restart app)
-      AdsApi.getActiveAds()
-        .then((ads) => {
-          activeAdsRef.current = ads;
-          if (ads.length === 0) {
-            console.log('[Ad Engine] Không có chiến dịch quảng cáo ACTIVE → bỏ qua');
-            finishAd();
-            return;
-          }
-          startAdCampaign(ads);
-        })
-        .catch(() => {
-          console.log('[Ad Engine] Lỗi tải chiến dịch quảng cáo → bỏ qua');
-          finishAd();
-        });
+    const picked = chooseAdAudioAsset(lastAdIdRef.current);
+    if (!picked) {
+      console.warn('[Ad Engine] Không có audio quảng cáo trong app → bỏ qua');
+      finishAd();
       return;
     }
-    startAdCampaign(campaigns);
-  };
 
-  const startAdCampaign = (
-    campaigns: { id: string; title?: string; advertiser?: string; audioUrl: string }[]
-  ) => {
-    let picked = campaigns[Math.floor(Math.random() * campaigns.length)];
-    if (campaigns.length > 1) {
-      let guard = 0;
-      while (picked.id === lastAdIdRef.current && guard < 10) {
-        picked = campaigns[Math.floor(Math.random() * campaigns.length)];
-        guard += 1;
-      }
-    }
     lastAdIdRef.current = picked.id;
+    setCurrentAdTitle(picked.title);
 
-    const adUri = resolveBackendFileUrl(picked.audioUrl);
-    setCurrentAdTitle(picked.title || picked.advertiser || 'Quảng cáo Moodify');
-
-    if (webViewRef.current) {
-      webViewRef.current.injectJavaScript(`window.playAdSong(${JSON.stringify(adUri)}); true;`);
+    try {
+      adHasStartedRef.current = false;
+      adPlayer.volume = volume;
+      adPlayer.replace(picked.assetModule);
+      adPlayer.play();
+    } catch (error) {
+      console.warn(`[Ad Engine] Không thể phát ${picked.id} → bỏ qua`, error);
+      if (isAdPlayingRef.current) finishAd();
     }
-    void AdsApi.recordAdImpression(picked.id);
   };
 
   const finishAd = () => {
-    if (webViewRef.current) {
-      webViewRef.current.injectJavaScript('window.pauseAdSong(); true;');
-    }
+    if (!isAdPlayingRef.current) return;
+    adPlayer.pause();
+    void adPlayer.seekTo(0).catch(() => {});
     isAdPlayingRef.current = false;
     adSecondsRemainingRef.current = 0;
     setIsAdPlaying(false);
@@ -537,7 +439,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const pending = pendingTrackRef.current;
     pendingTrackRef.current = null;
     if (pending) {
-      executePlayTrack(pending.track, pending.newPlaylist);
+      resumeTrackAfterAdRef.current = false;
+      void executePlayTrack(pending.track, pending.newPlaylist);
+    } else if (resumeTrackAfterAdRef.current) {
+      resumeTrackAfterAdRef.current = false;
+      trackPlayer.play();
+      setIsPlaying(true);
+    } else {
+      resumeTrackAfterAdRef.current = false;
     }
   };
 
@@ -554,9 +463,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
-    if (webViewRef.current) {
-      webViewRef.current.injectJavaScript('window.pauseSong(); true;');
-    }
+    resumeTrackAfterAdRef.current = isPlayingRef.current;
+    trackPlayer.pause();
     setIsPlaying(false);
     if (trackToPlayAfter) {
       pendingTrackRef.current = { track: trackToPlayAfter, newPlaylist };
@@ -633,36 +541,37 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const togglePlayPause = () => {
-    if (!webViewRef.current) return;
     if (isAdPlayingRef.current) {
-      if (isPlayingRef.current) {
-        webViewRef.current.injectJavaScript('window.pauseAdSong(); true;');
+      if (adPlayer.playing) {
+        adPlayer.pause();
+        setIsPlaying(false);
       } else {
-        webViewRef.current.injectJavaScript('window.resumeAdSong(); true;');
+        adPlayer.play();
+        setIsPlaying(true);
       }
       return;
     }
-    if (isPlaying) {
-      webViewRef.current.injectJavaScript('window.pauseSong(); true;');
+    if (trackPlayer.playing) {
+      trackPlayer.pause();
       setIsPlaying(false);
     } else {
-      webViewRef.current.injectJavaScript('window.resumeSong(); true;');
+      trackPlayer.play();
       setIsPlaying(true);
     }
   };
 
   const seekTo = (seconds: number) => {
-    if (!webViewRef.current) return;
     setCurrentTime(seconds);
-    webViewRef.current.injectJavaScript(`window.seekSong(${seconds}); true;`);
+    void trackPlayer.seekTo(seconds).catch((error) => {
+      console.warn('[Player] Không thể tua audio:', error);
+    });
   };
 
   const setVolume = (vol: number) => {
     const clamped = Math.max(0, Math.min(1, vol));
     setVolumeState(clamped);
-    if (webViewRef.current) {
-      webViewRef.current.injectJavaScript(`window.setVolume(${clamped}); true;`);
-    }
+    trackPlayer.volume = clamped;
+    adPlayer.volume = clamped;
   };
 
   const playNext = (isAutoAdvance = false) => {
@@ -737,62 +646,135 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const toggleShuffle = () => setIsShuffle((prev) => !prev);
   const toggleRepeat = () => setIsRepeat((prev) => !prev);
 
-  const handleMessage = (event: any) => {
-    try {
-      const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'play') {
-        setIsPlaying(true);
-        setIsLoadingAudio(false);
-      } else if (data.type === 'pause') {
-        setIsPlaying(false);
-      } else if (data.type === 'ended') {
-        setIsPlaying(false);
-        setCurrentTime(0);
-        // Kiểm tra hẹn giờ dừng khi hết bài hát
-        if (sleepTimerRef.current.minutes === -1) {
-          setSleepTimerMinutes(null);
-          setSleepTimerRemaining(null);
-          return;
-        }
+  useEffect(() => {
+    const playbackTime = Math.max(0, trackStatus.currentTime || 0);
+    setCurrentTime((previous) => (Math.abs(previous - playbackTime) < 0.05 ? previous : playbackTime));
+    if (trackStatus.duration > 0) {
+      setDuration((previous) => (previous === trackStatus.duration ? previous : trackStatus.duration));
+    }
 
-        if (isRepeatRef.current) {
-          if (webViewRef.current) {
-            webViewRef.current.injectJavaScript('window.seekSong(0); window.resumeSong(); true;');
-            setIsPlaying(true);
-          }
-        } else {
-          playNext(true);
-        }
-      } else if (data.type === 'timeupdate') {
-        setCurrentTime(data.currentTime);
-        if (data.duration && data.duration > 0) {
-          setDuration(data.duration);
-        }
-      } else if (data.type === 'error') {
-        setIsLoadingAudio(false);
-        setIsPlaying(false);
-        console.warn('[Player] Audio stream error encountered');
-      } else if (data.type === 'ad_play') {
-        setIsPlaying(true);
-      } else if (data.type === 'ad_pause') {
-        setIsPlaying(false);
-      } else if (data.type === 'ad_timeupdate') {
-        if (data.duration && data.duration > 0) {
-          const remaining = Math.max(0, Math.ceil(data.duration - (data.currentTime || 0)));
-          adSecondsRemainingRef.current = remaining;
-          setAdTotalDuration(Math.ceil(data.duration));
-          setAdSecondsRemaining(remaining);
-        }
-      } else if (data.type === 'ad_ended' || data.type === 'ad_error') {
-        if (data.type === 'ad_error') {
-          console.warn('[Ad Engine] Quảng cáo lỗi, bỏ qua và phát bài đang chờ');
-        }
-        if (isAdPlayingRef.current) {
-          finishAd();
-        }
+    if (trackStatus.isBuffering) {
+      setIsLoadingAudio(true);
+    } else if (trackStatus.isLoaded) {
+      setIsLoadingAudio(false);
+    }
+
+    if (trackStatus.playing) trackHasStartedRef.current = true;
+    if (!trackStatus.didJustFinish) trackFinishHandledRef.current = false;
+    if (
+      trackStatus.didJustFinish &&
+      trackHasStartedRef.current &&
+      !trackFinishHandledRef.current &&
+      !isAdPlayingRef.current
+    ) {
+      trackFinishHandledRef.current = true;
+      trackHasStartedRef.current = false;
+      setCurrentTime(0);
+      setIsPlaying(false);
+
+      if (sleepTimerRef.current.minutes === -1) {
+        setSleepTimerMinutes(null);
+        setSleepTimerRemaining(null);
+        return;
       }
-    } catch {}
-  };
+
+      if (isRepeatRef.current) {
+        void trackPlayer.seekTo(0).then(() => trackPlayer.play()).catch((error) => {
+          console.warn('[Player] Không thể phát lại bài hát:', error);
+        });
+      } else {
+        playNext(true);
+      }
+    }
+
+    if (trackStatus.error && trackStatus.error !== lastTrackErrorRef.current) {
+      lastTrackErrorRef.current = trackStatus.error;
+      setIsLoadingAudio(false);
+      setIsPlaying(false);
+
+      const source = playbackSourceRef.current;
+      if (!source || source.requestId !== playbackRequestIdRef.current) {
+        console.warn('[Player] Audio playback error:', trackStatus.error);
+        return;
+      }
+
+      if (source.isOffline) {
+        source.isOffline = false;
+        setCurrentTime(0);
+        setDuration(0);
+        setIsLoadingAudio(true);
+        console.warn('[Player] File offline không phát được, chuyển sang stream:', trackStatus.error);
+        trackPlayer.replace({ uri: source.streamUri });
+        trackPlayer.play();
+        return;
+      }
+
+      if (source.retryCount < 1) {
+        source.retryCount += 1;
+        setIsLoadingAudio(true);
+        console.warn('[Player] Stream gặp lỗi, thử lại một lần:', trackStatus.error);
+        const requestId = source.requestId;
+        setTimeout(() => {
+          if (requestId !== playbackRequestIdRef.current || isAdPlayingRef.current) return;
+          trackPlayer.replace({ uri: source.streamUri });
+          trackPlayer.play();
+        }, 400);
+        return;
+      }
+
+      console.warn('[Player] Stream không thể phát sau khi thử lại:', trackStatus.error);
+    } else if (!trackStatus.error) {
+      lastTrackErrorRef.current = null;
+    }
+  }, [
+    trackStatus.currentTime,
+    trackStatus.duration,
+    trackStatus.isBuffering,
+    trackStatus.isLoaded,
+    trackStatus.playing,
+    trackStatus.didJustFinish,
+    trackStatus.error,
+    trackPlayer,
+    playNext,
+  ]);
+
+  useEffect(() => {
+    const playing = isAdPlaying ? adStatus.playing : trackStatus.playing;
+    setIsPlaying((previous) => (previous === playing ? previous : playing));
+  }, [isAdPlaying, adStatus.playing, trackStatus.playing]);
+
+  useEffect(() => {
+    if (adStatus.duration > 0) {
+      const total = Math.ceil(adStatus.duration);
+      const remaining = Math.max(0, Math.ceil(adStatus.duration - adStatus.currentTime));
+      adSecondsRemainingRef.current = remaining;
+      setAdTotalDuration((previous) => (previous === total ? previous : total));
+      setAdSecondsRemaining((previous) => (previous === remaining ? previous : remaining));
+    }
+
+    if (adStatus.playing) adHasStartedRef.current = true;
+    if (adStatus.error && adStatus.error !== lastAdErrorRef.current) {
+      lastAdErrorRef.current = adStatus.error;
+      if (isAdPlayingRef.current) {
+        console.warn('[Ad Engine] Audio quảng cáo không phát được, bỏ qua:', adStatus.error);
+        finishAd();
+      }
+    } else if (!adStatus.error) {
+      lastAdErrorRef.current = null;
+    }
+
+    if (adStatus.didJustFinish && adHasStartedRef.current && isAdPlayingRef.current) {
+      adHasStartedRef.current = false;
+      finishAd();
+    }
+  }, [
+    adStatus.currentTime,
+    adStatus.duration,
+    adStatus.didJustFinish,
+    adStatus.error,
+    adStatus.playing,
+    finishAd,
+  ]);
 
   return (
     <PlayerContext.Provider
@@ -834,32 +816,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }}
     >
       {children}
-
-      {/* Bộ máy phát âm thanh siêu ổn định chạy ngầm (nhạc + quảng cáo) */}
-      <View style={styles.hiddenAudioContainer} pointerEvents="none">
-        {React.createElement(WebView as any, {
-          ref: webViewRef,
-          source: { html: AUDIO_HTML },
-          originWhitelist: ['*'],
-          mediaPlaybackRequiresUserAction: false,
-          allowsInlineMediaPlayback: true,
-          javaScriptEnabled: true,
-          onMessage: handleMessage,
-        })}
-      </View>
     </PlayerContext.Provider>
   );
 };
 
 export const usePlayer = () => useContext(PlayerContext);
-
-const styles = StyleSheet.create({
-  hiddenAudioContainer: {
-    width: 1,
-    height: 1,
-    opacity: 0.01,
-    position: 'absolute',
-    bottom: -10,
-    left: -10,
-  },
-});

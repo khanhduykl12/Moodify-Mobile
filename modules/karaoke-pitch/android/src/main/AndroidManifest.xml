@@ -1,0 +1,3 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- RECORD_AUDIO đã khai báo ở app.json của app chính -->
+</manifest>

@@ -8,7 +8,8 @@ const debuggerHost = Constants.expoConfig?.hostUri;
 const detectedIp = debuggerHost ? debuggerHost.split(':')[0] : '172.20.10.4';
 
 export const CURRENT_LAN_IP = detectedIp || '172.20.10.4';
-export const DEV_PORT = '8088';
+// Backend Spring Boot runs on SERVER_PORT=8080 (see moodify-backend/.env).
+export const DEV_PORT = '8080';
 
 const configuredApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
 const defaultApiBaseUrl = debuggerHost
