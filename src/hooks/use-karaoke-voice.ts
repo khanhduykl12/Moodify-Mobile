@@ -5,16 +5,24 @@
 // không có chọn thiết bị input/output (dùng mic/loa mặc định của máy).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform } from 'react-native';
+import { Alert, NativeModules, Platform } from 'react-native';
 import { Device, types as MediaTypes } from 'mediasoup-client';
 import { KaraokeApi } from '../services/api';
 
 // Cung cấp RTCPeerConnection / getUserMedia / MediaStream toàn cục cho mediasoup-client.
-// Chỉ chạy trên native — build web không có native module của react-native-webrtc.
-if (Platform.OS !== 'web') {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { registerGlobals } = require('react-native-webrtc');
-  registerGlobals();
+// Chỉ chạy khi native module WebRTC có sẵn (Expo Go không hỗ trợ react-native-webrtc do thiếu native binary)
+const isWebRTCSupported = Platform.OS !== 'web' && Boolean(NativeModules && (NativeModules as Record<string, unknown>).WebRTCModule);
+
+if (isWebRTCSupported) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { registerGlobals } = require('react-native-webrtc');
+    if (typeof registerGlobals === 'function') {
+      registerGlobals();
+    }
+  } catch (err) {
+    console.warn('[KaraokeVoice] Could not register WebRTC globals:', err);
+  }
 }
 
 export type RemoteVoice = { userId: string; stream: MediaStream };
@@ -120,6 +128,12 @@ export function useKaraokeVoice(roomId: number, enabled: boolean) {
   }, []);
 
   useEffect(() => {
+    if (!isWebRTCSupported) {
+      if (enabled) {
+        setVoiceError('Voice chat cần Development build (không khả dụng trên Expo Go).');
+      }
+      return;
+    }
     if (!enabled || !Number.isSafeInteger(roomId) || roomId <= 0) return;
     let disposed = false;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -414,6 +428,13 @@ export function useKaraokeVoice(roomId: number, enabled: boolean) {
   }, [clearRemoteVoice, disconnectMedia, enabled, roomId]);
 
   const toggleMicrophone = useCallback(async () => {
+    if (!isWebRTCSupported) {
+      Alert.alert(
+        'Không hỗ trợ trên Expo Go',
+        'Tính năng Voice chat thời gian thực yêu cầu native development build (expo-dev-client). Phòng hát, đồng bộ nhạc và chấm điểm vẫn hoạt động bình thường.'
+      );
+      return;
+    }
     if (microphoneBusyRef.current) return;
     microphoneBusyRef.current = true;
     setMicrophoneBusy(true);
@@ -468,6 +489,7 @@ export function useKaraokeVoice(roomId: number, enabled: boolean) {
 
   // Mute/bật tiếng voice của một thành viên (chỉ ảnh hưởng máy mình)
   const setRemoteVoiceMuted = useCallback((userId: string, muted: boolean) => {
+    if (!isWebRTCSupported) return;
     for (const [producerId, voiceUserId] of userByProducerRef.current) {
       if (voiceUserId !== userId) continue;
       const consumer = consumerByProducerRef.current.get(producerId);
